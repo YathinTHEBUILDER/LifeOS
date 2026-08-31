@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './sidebar';
 import { MobileNav } from './mobile-nav';
 import { Header } from './header';
@@ -10,7 +11,19 @@ import { PlanDayModal } from '../today/plan-day-modal';
 import { Toaster } from 'sonner';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isPlanDayOpen, setIsPlanDayOpen] = useState(false);
+
+  const isAuthPage = pathname?.startsWith('/auth');
+
+  if (isAuthPage) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        {children}
+        <Toaster position="top-center" richColors />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground selection:bg-primary/20 selection:text-primary">

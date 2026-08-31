@@ -21,6 +21,13 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
 
+    // Persist *before* creating the client so this login's own client picks
+    // it up immediately, and so it's consistent for every client created on
+    // later page loads (see src/lib/supabase/client.ts).
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('life_os_stay_logged_in', String(stayLoggedIn));
+    }
+
     const supabase = createClient();
     if (!supabase) {
       toast.error('Supabase configuration missing.');

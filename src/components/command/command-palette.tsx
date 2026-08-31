@@ -9,11 +9,9 @@ import {
   FolderKanban,
   FileText,
   Timer,
-  Sparkles,
-  Flame,
   Plus,
+  Flame,
   ArrowRight,
-  X,
 } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
 
@@ -28,7 +26,6 @@ export function CommandPalette() {
     notes,
     openQuickAdd,
     planMyDay,
-    replanMyDay,
   } = usePlanner();
 
   const [search, setSearch] = useState('');
@@ -36,7 +33,6 @@ export function CommandPalette() {
   // Keyboard shortcut listener for Cmd+K and global navigation keys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if user is typing in an input/textarea
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
@@ -70,7 +66,6 @@ export function CommandPalette() {
   // Filtered lists
   const filteredTasks = tasks.filter((t) => t.title.toLowerCase().includes(query)).slice(0, 4);
   const filteredProjects = projects.filter((p) => p.name.toLowerCase().includes(query)).slice(0, 3);
-  const filteredEvents = events.filter((e) => e.title.toLowerCase().includes(query)).slice(0, 3);
   const filteredNotes = notes.filter((n) => n.title.toLowerCase().includes(query)).slice(0, 3);
 
   const handleNavigate = (path: string) => {
@@ -86,174 +81,160 @@ export function CommandPalette() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-start justify-center pt-20 p-4">
-      <div className="bg-card w-full max-w-xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+    <div className="fixed inset-0 z-50 apple-sheet-backdrop flex items-start justify-center pt-24 p-4">
+      <div className="absolute inset-0" onClick={() => setIsCommandPaletteOpen(false)} />
+
+      <div className="relative w-full max-w-xl bg-card rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[75vh] animate-in fade-in zoom-in-95 duration-150">
         {/* Search Input Box */}
-        <div className="p-4 border-b border-border flex items-center gap-3">
-          <Search className="w-5 h-5 text-muted-foreground" />
+        <div className="p-3.5 border-b border-border/80 flex items-center gap-3">
+          <Search className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
           <input
             type="text"
-            placeholder="Type a command, task, project, note, or event..."
+            placeholder="Search commands, tasks, projects, notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus
             className="w-full text-sm bg-transparent border-0 focus:outline-hidden text-foreground placeholder:text-muted-foreground/60"
           />
-          <button
-            onClick={() => setIsCommandPaletteOpen(false)}
-            className="text-xs text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-secondary"
-          >
-            <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono">ESC</kbd>
-          </button>
+          <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] text-muted-foreground font-mono">
+            ESC
+          </kbd>
         </div>
 
         {/* Results List */}
-        <div className="p-3 overflow-y-auto space-y-4 flex-1">
+        <div className="p-2 overflow-y-auto space-y-3 flex-1 text-xs">
           {/* Quick Actions */}
           <div>
-            <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Quick Actions
+            <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Actions
             </div>
-            <div className="space-y-1 mt-1">
+            <div className="space-y-0.5 mt-0.5">
               <button
                 onClick={() => handleAction(() => openQuickAdd('task'))}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors"
               >
-                <div className="flex items-center gap-2.5">
-                  <Plus className="w-4 h-4 text-primary" />
-                  <span>Create new task</span>
+                <div className="flex items-center gap-2">
+                  <Plus className="w-3.5 h-3.5 text-primary" />
+                  <span>New Task</span>
                 </div>
                 <kbd className="text-[10px] text-muted-foreground font-mono">Q</kbd>
               </button>
 
               <button
                 onClick={() => handleAction(() => openQuickAdd('event'))}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors"
               >
-                <div className="flex items-center gap-2.5">
-                  <Calendar className="w-4 h-4 text-sky-500" />
-                  <span>Schedule event or time block</span>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Schedule Event</span>
                 </div>
               </button>
 
               <button
                 onClick={() => handleAction(() => planMyDay())}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors"
               >
-                <div className="flex items-center gap-2.5">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span>Plan My Day automatically</span>
+                <div className="flex items-center gap-2">
+                  <Timer className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Plan Day</span>
                 </div>
-              </button>
-
-              <button
-                onClick={() => handleNavigate('/focus')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Timer className="w-4 h-4 text-emerald-500" />
-                  <span>Start a Focus Timer Session</span>
-                </div>
-                <kbd className="text-[10px] text-muted-foreground font-mono">F</kbd>
               </button>
             </div>
           </div>
 
-          {/* Tasks Results */}
-          {filteredTasks.length > 0 && (
+          {/* Navigation */}
+          <div>
+            <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Navigation
+            </div>
+            <div className="grid grid-cols-2 gap-0.5 mt-0.5">
+              {[
+                { name: 'Today', path: '/', key: 'T' },
+                { name: 'Calendar', path: '/calendar', key: 'C' },
+                { name: 'Tasks', path: '/tasks', key: '' },
+                { name: 'Focus', path: '/focus', key: 'F' },
+                { name: 'Habits', path: '/habits', key: '' },
+                { name: 'Projects', path: '/projects', key: '' },
+                { name: 'Notes', path: '/notes', key: '' },
+                { name: 'Review', path: '/review', key: '' },
+              ].map((nav) => (
+                <button
+                  key={nav.path}
+                  onClick={() => handleNavigate(nav.path)}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors text-left"
+                >
+                  <span>{nav.name}</span>
+                  {nav.key && <kbd className="text-[10px] text-muted-foreground font-mono">{nav.key}</kbd>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tasks Result */}
+          {filteredTasks.length > 0 && query && (
             <div>
-              <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Tasks
               </div>
-              <div className="space-y-1 mt-1">
+              <div className="space-y-0.5 mt-0.5">
                 {filteredTasks.map((task) => (
                   <button
                     key={task.id}
                     onClick={() => handleNavigate('/tasks')}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors text-left"
                   >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <CheckSquare
-                        className={`w-3.5 h-3.5 shrink-0 ${
-                          task.status === 'completed' ? 'text-emerald-500' : 'text-muted-foreground'
-                        }`}
-                      />
-                      <span className={`truncate ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>
-                        {task.title}
-                      </span>
-                    </div>
-                    {task.project && (
-                      <span
-                        className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
-                        style={{ backgroundColor: `${task.project.color}20`, color: task.project.color }}
-                      >
-                        {task.project.name}
-                      </span>
-                    )}
+                    <span className="truncate">{task.title}</span>
+                    <span className="text-[10px] text-muted-foreground capitalize shrink-0 ml-2">
+                      {task.status}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Projects Results */}
-          {filteredProjects.length > 0 && (
+          {/* Projects Result */}
+          {filteredProjects.length > 0 && query && (
             <div>
-              <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Projects
               </div>
-              <div className="space-y-1 mt-1">
+              <div className="space-y-0.5 mt-0.5">
                 {filteredProjects.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => handleNavigate('/projects')}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors text-left"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <FolderKanban className="w-3.5 h-3.5" style={{ color: p.color }} />
-                      <span>{p.name}</span>
-                    </div>
-                    <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                    <span className="truncate">{p.name}</span>
+                    <span className="text-[10px] text-muted-foreground capitalize shrink-0 ml-2">
+                      {p.status}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Notes Results */}
-          {filteredNotes.length > 0 && (
+          {/* Notes Result */}
+          {filteredNotes.length > 0 && query && (
             <div>
-              <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Notes
               </div>
-              <div className="space-y-1 mt-1">
+              <div className="space-y-0.5 mt-0.5">
                 {filteredNotes.map((n) => (
                   <button
                     key={n.id}
                     onClick={() => handleNavigate('/notes')}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-foreground hover:bg-secondary/70 transition-colors"
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground hover:bg-secondary transition-colors text-left"
                   >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{n.title}</span>
-                    </div>
-                    <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                    <span className="truncate">{n.title}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-border bg-secondary/30 text-[11px] text-muted-foreground flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span>Navigation:</span>
-            <kbd className="px-1 py-0.5 rounded bg-card border border-border font-mono">T</kbd> Today
-            <kbd className="px-1 py-0.5 rounded bg-card border border-border font-mono">C</kbd> Calendar
-            <kbd className="px-1 py-0.5 rounded bg-card border border-border font-mono">F</kbd> Focus
-          </div>
-          <span>LifeOS Intelligence</span>
         </div>
       </div>
     </div>

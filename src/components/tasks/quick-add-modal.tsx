@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, CheckSquare, Calendar, FileText, Flame, Plus, Clock, Flag, Folder } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
 import { Priority, EventCategory, HabitFrequency } from '@/types';
 import { format } from 'date-fns';
@@ -20,6 +20,15 @@ export function QuickAddModal() {
   } = usePlanner();
 
   const [activeTab, setActiveTab] = useState<'task' | 'event' | 'note' | 'habit'>(quickAddDefaultTab);
+  const [showDetails, setShowDetails] = useState(false);
+
+  // Sync tab with default when opened
+  useEffect(() => {
+    if (isQuickAddOpen) {
+      setActiveTab(quickAddDefaultTab);
+      setShowDetails(false);
+    }
+  }, [isQuickAddOpen, quickAddDefaultTab]);
 
   // Task Form State
   const [taskTitle, setTaskTitle] = useState('');
@@ -53,6 +62,7 @@ export function QuickAddModal() {
 
   const handleClose = () => {
     setIsQuickAddOpen(false);
+    setShowDetails(false);
   };
 
   const handleTaskSubmit = (e: React.FormEvent) => {
@@ -68,7 +78,7 @@ export function QuickAddModal() {
       project_id: taskProjectId || null,
     });
 
-    toast.success(`Task "${taskTitle}" created`);
+    toast.success('Task added');
     setTaskTitle('');
     setTaskDescription('');
     handleClose();
@@ -90,7 +100,7 @@ export function QuickAddModal() {
       project_id: taskProjectId || null,
     });
 
-    toast.success(`Event "${eventTitle}" scheduled`);
+    toast.success('Event scheduled');
     setEventTitle('');
     handleClose();
   };
@@ -106,7 +116,7 @@ export function QuickAddModal() {
       project_id: noteProjectId || null,
     });
 
-    toast.success(`Note "${noteTitle}" saved`);
+    toast.success('Note saved');
     setNoteTitle('');
     setNoteContent('');
     handleClose();
@@ -123,159 +133,158 @@ export function QuickAddModal() {
       target_days: habitTarget,
     });
 
-    toast.success(`Habit "${habitName}" added`);
+    toast.success('Habit added');
     setHabitName('');
     setHabitDesc('');
     handleClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-card w-full max-w-lg rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-1 bg-secondary/70 p-1 rounded-xl">
-            <button
-              onClick={() => setActiveTab('task')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'task' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              Task
-            </button>
-            <button
-              onClick={() => setActiveTab('event')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'event' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              Event
-            </button>
-            <button
-              onClick={() => setActiveTab('note')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'note' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Note
-            </button>
-            <button
-              onClick={() => setActiveTab('habit')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'habit' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              Habit
-            </button>
+    <div className="fixed inset-0 z-50 apple-sheet-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {/* Backdrop click to dismiss */}
+      <div className="absolute inset-0" onClick={handleClose} />
+
+      <div className="relative w-full max-w-lg bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] pb-safe sm:pb-0 animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 duration-200">
+        {/* Header / Segmented Switcher */}
+        <div className="p-3 border-b border-border/80 flex items-center justify-between">
+          <div className="flex items-center gap-1 bg-secondary/80 p-0.5 rounded-lg">
+            {(['task', 'event', 'note', 'habit'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
+                  activeTab === tab
+                    ? 'bg-card text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
+
           <button
             onClick={handleClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            aria-label="Close"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Form Body */}
-        <div className="p-5 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1">
           {/* TASK FORM */}
           {activeTab === 'task' && (
-            <form onSubmit={handleTaskSubmit} className="space-y-4">
+            <form onSubmit={handleTaskSubmit} className="space-y-3">
               <div>
                 <input
                   type="text"
-                  placeholder="Task title (e.g. Finish math problem set)"
+                  placeholder="Task title"
                   value={taskTitle}
                   onChange={(e) => setTaskTitle(e.target.value)}
                   autoFocus
                   required
-                  className="w-full text-base font-semibold bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
+                  className="w-full text-base font-medium bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
                 />
               </div>
 
+              {/* Progressive Disclosure Toggle */}
               <div>
-                <textarea
-                  placeholder="Add notes, context or requirements..."
-                  value={taskDescription}
-                  onChange={(e) => setTaskDescription(e.target.value)}
-                  rows={3}
-                  className="w-full text-xs bg-secondary/40 border border-border/70 rounded-xl p-3 focus:outline-hidden focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground/60 resize-none"
-                />
+                <button
+                  type="button"
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="text-xs text-primary hover:underline flex items-center gap-1 font-medium py-1"
+                >
+                  {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  <span>{showDetails ? 'Hide details' : 'Add details'}</span>
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {/* Priority */}
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Priority</label>
-                  <select
-                    value={taskPriority}
-                    onChange={(e) => setTaskPriority(e.target.value as Priority)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-                  >
-                    <option value="none">None</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent 🔥</option>
-                  </select>
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Estimated Duration</label>
-                  <select
-                    value={taskDuration}
-                    onChange={(e) => setTaskDuration(Number(e.target.value))}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-                  >
-                    <option value={15}>15 mins</option>
-                    <option value={30}>30 mins</option>
-                    <option value={45}>45 mins</option>
-                    <option value={60}>1 hour</option>
-                    <option value={90}>1.5 hours</option>
-                    <option value={120}>2 hours</option>
-                  </select>
-                </div>
-
-                {/* Due Date */}
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Due Date</label>
-                  <input
-                    type="date"
-                    value={taskDueDate}
-                    onChange={(e) => setTaskDueDate(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+              {showDetails && (
+                <div className="space-y-3 pt-2 border-t border-border/60 animate-in fade-in-50 duration-150">
+                  <textarea
+                    placeholder="Notes or context..."
+                    value={taskDescription}
+                    onChange={(e) => setTaskDescription(e.target.value)}
+                    rows={2}
+                    className="w-full text-xs bg-secondary/40 border border-border/70 rounded-lg p-2.5 focus:outline-hidden text-foreground placeholder:text-muted-foreground/60 resize-none"
                   />
-                </div>
 
-                {/* Project */}
-                <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Project</label>
-                  <select
-                    value={taskProjectId}
-                    onChange={(e) => setTaskProjectId(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-                  >
-                    <option value="">No Project (General)</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Due Date</label>
+                      <input
+                        type="date"
+                        value={taskDueDate}
+                        onChange={(e) => setTaskDueDate(e.target.value)}
+                        className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                      />
+                    </div>
 
-              <div className="pt-2 flex justify-end">
+                    <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Duration</label>
+                      <select
+                        value={taskDuration}
+                        onChange={(e) => setTaskDuration(Number(e.target.value))}
+                        className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                      >
+                        <option value={15}>15 mins</option>
+                        <option value={30}>30 mins</option>
+                        <option value={45}>45 mins</option>
+                        <option value={60}>1 hour</option>
+                        <option value={90}>1.5 hours</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Priority</label>
+                      <select
+                        value={taskPriority}
+                        onChange={(e) => setTaskPriority(e.target.value as Priority)}
+                        className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                      >
+                        <option value="none">None</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Project</label>
+                      <select
+                        value={taskProjectId}
+                        onChange={(e) => setTaskProjectId(e.target.value)}
+                        className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                      >
+                        <option value="">None</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-normal text-muted-foreground hover:bg-secondary"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
                 >
-                  Create Task
+                  Add Task
                 </button>
               </div>
             </form>
@@ -283,85 +292,91 @@ export function QuickAddModal() {
 
           {/* EVENT FORM */}
           {activeTab === 'event' && (
-            <form onSubmit={handleEventSubmit} className="space-y-4">
+            <form onSubmit={handleEventSubmit} className="space-y-3">
               <div>
                 <input
                   type="text"
-                  placeholder="Event title (e.g. Algorithms Lecture)"
+                  placeholder="Event title"
                   value={eventTitle}
                   onChange={(e) => setEventTitle(e.target.value)}
                   autoFocus
                   required
-                  className="w-full text-base font-semibold bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
+                  className="w-full text-base font-medium bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Date</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Date</label>
                   <input
                     type="date"
                     value={eventDate}
                     onChange={(e) => setEventDate(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Category</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Category</label>
                   <select
                     value={eventCategory}
                     onChange={(e) => setEventCategory(e.target.value as EventCategory)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   >
                     <option value="task_block">Time Block</option>
                     <option value="routine">Routine</option>
                     <option value="meeting">Meeting</option>
                     <option value="class">Class</option>
-                    <option value="focus">Focus Session</option>
+                    <option value="focus">Focus</option>
                     <option value="break">Break</option>
-                    <option value="personal">Personal</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Start Time</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Start Time</label>
                   <input
                     type="time"
                     value={eventStartTime}
                     onChange={(e) => setEventStartTime(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">End Time</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">End Time</label>
                   <input
                     type="time"
                     value={eventEndTime}
                     onChange={(e) => setEventEndTime(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Location / Link (Optional)</label>
+                <label className="text-[11px] text-muted-foreground block mb-1">Location (Optional)</label>
                 <input
                   type="text"
                   placeholder="e.g. Room 204 or Zoom link"
                   value={eventLocation}
                   onChange={(e) => setEventLocation(e.target.value)}
-                  className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                  className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                 />
               </div>
 
-              <div className="pt-2 flex justify-end">
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-normal text-muted-foreground hover:bg-secondary"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
                 >
-                  Schedule Event
+                  Schedule
                 </button>
               </div>
             </form>
@@ -369,7 +384,7 @@ export function QuickAddModal() {
 
           {/* NOTE FORM */}
           {activeTab === 'note' && (
-            <form onSubmit={handleNoteSubmit} className="space-y-4">
+            <form onSubmit={handleNoteSubmit} className="space-y-3">
               <div>
                 <input
                   type="text"
@@ -378,73 +393,82 @@ export function QuickAddModal() {
                   onChange={(e) => setNoteTitle(e.target.value)}
                   autoFocus
                   required
-                  className="w-full text-base font-semibold bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
+                  className="w-full text-base font-medium bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
                 />
               </div>
 
               <div>
                 <textarea
-                  placeholder="Capture thoughts, markdown notes, ideas..."
+                  placeholder="Capture thoughts or ideas..."
                   value={noteContent}
                   onChange={(e) => setNoteContent(e.target.value)}
                   rows={4}
-                  className="w-full text-xs bg-secondary/40 border border-border/70 rounded-xl p-3 focus:outline-hidden focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground/60 resize-none"
+                  className="w-full text-xs bg-secondary/40 border border-border/70 rounded-lg p-2.5 focus:outline-hidden text-foreground placeholder:text-muted-foreground/60 resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer">
+              <div className="flex items-center justify-between pt-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                   <input
                     type="checkbox"
                     checked={notePinned}
                     onChange={(e) => setNotePinned(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary"
+                    className="rounded border-border text-primary"
                   />
-                  Pin Note to Top
+                  Pin Note
                 </label>
 
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
-                >
-                  Save Note
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-normal text-muted-foreground hover:bg-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
+                  >
+                    Save Note
+                  </button>
+                </div>
               </div>
             </form>
           )}
 
           {/* HABIT FORM */}
           {activeTab === 'habit' && (
-            <form onSubmit={handleHabitSubmit} className="space-y-4">
+            <form onSubmit={handleHabitSubmit} className="space-y-3">
               <div>
                 <input
                   type="text"
-                  placeholder="Habit name (e.g. 10m Meditation)"
+                  placeholder="Habit name (e.g. Meditation)"
                   value={habitName}
                   onChange={(e) => setHabitName(e.target.value)}
                   autoFocus
                   required
-                  className="w-full text-base font-semibold bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
+                  className="w-full text-base font-medium bg-transparent border-0 focus:outline-hidden placeholder:text-muted-foreground/60 text-foreground"
                 />
               </div>
 
               <div>
                 <input
                   type="text"
-                  placeholder="Brief description / motivation"
+                  placeholder="Description (Optional)"
                   value={habitDesc}
                   onChange={(e) => setHabitDesc(e.target.value)}
-                  className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                  className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Frequency</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Frequency</label>
                   <select
                     value={habitFreq}
                     onChange={(e) => setHabitFreq(e.target.value as HabitFrequency)}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   >
                     <option value="daily">Daily</option>
                     <option value="weekdays">Weekdays</option>
@@ -453,24 +477,31 @@ export function QuickAddModal() {
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Target Days / Week</label>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Target Days / Week</label>
                   <input
                     type="number"
                     min={1}
                     max={7}
                     value={habitTarget}
                     onChange={(e) => setHabitTarget(Number(e.target.value))}
-                    className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   />
                 </div>
               </div>
 
-              <div className="pt-2 flex justify-end">
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-normal text-muted-foreground hover:bg-secondary"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
                 >
-                  Save Habit
+                  Add Habit
                 </button>
               </div>
             </form>
@@ -480,3 +511,4 @@ export function QuickAddModal() {
     </div>
   );
 }
+

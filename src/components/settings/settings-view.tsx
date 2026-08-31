@@ -1,12 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings, Shield, Download, RefreshCw, Moon, Sun, User, Clock, Database } from 'lucide-react';
+import Link from 'next/link';
+import { Download, LogOut, LogIn } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
 import { toast } from 'sonner';
 
 export function SettingsView() {
-  const { profile, updateDailyIntention, isSupabaseConnected, tasks, events, projects, habits, notes } = usePlanner();
+  const {
+    profile,
+    updateProfile,
+    isSupabaseConnected,
+    isAuthenticated,
+    signOut,
+    tasks,
+    events,
+    projects,
+    habits,
+    notes,
+  } = usePlanner();
 
   const [name, setName] = useState(profile.full_name);
   const [workStart, setWorkStart] = useState(profile.work_start_time || '09:00');
@@ -28,129 +40,167 @@ export function SettingsView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lifeos-planner-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `lifeos-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Planner data exported as JSON backup');
+    toast.success('Backup exported');
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Preferences saved!');
+    updateProfile({
+      full_name: name,
+      timezone,
+      work_start_time: workStart,
+      work_end_time: workEnd,
+    });
+    toast.success('Preferences updated');
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-8 max-w-2xl mx-auto">
       {/* Header */}
-      <div className="p-4 rounded-2xl bg-card border border-border shadow-xs flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-          <Settings className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="text-lg font-bold text-foreground">Settings & Preferences</h1>
-          <p className="text-xs text-muted-foreground">Manage profile, working hours, and data sync</p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Preferences and data storage</p>
       </div>
 
-      {/* Supabase Connection Status Card */}
-      <div className="p-5 rounded-2xl bg-card border border-border shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold text-foreground">Backend & Database</h3>
-          </div>
-          <span
-            className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              isSupabaseConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'
-            }`}
-          >
-            {isSupabaseConnected ? 'Connected to Supabase' : 'Local Storage Mode (Offline Ready)'}
+      {/* Account & Schedule (iOS Grouped Style) */}
+      <form onSubmit={handleSaveProfile} className="space-y-6">
+        <div className="space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
+            General
           </span>
-        </div>
+          <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
+            <div className="p-3.5 flex items-center justify-between gap-4">
+              <span className="text-xs font-normal text-foreground">Name</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="text-xs text-right bg-transparent border-0 focus:outline-hidden text-foreground placeholder:text-muted-foreground font-medium"
+              />
+            </div>
 
-        <p className="text-xs text-muted-foreground">
-          {isSupabaseConnected
-            ? 'Your planner is securely connected to your PostgreSQL instance with Row-Level Security active.'
-            : 'Running in zero-latency offline-first local mode. To sync with Supabase cloud, supply NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your .env.local file.'}
-        </p>
-      </div>
-
-      {/* Profile & Working Hours Form */}
-      <form onSubmit={handleSaveProfile} className="p-6 rounded-2xl bg-card border border-border shadow-xs space-y-4">
-        <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-          <User className="w-4 h-4 text-primary" /> User Profile & Working Hours
-        </h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Full Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Timezone</label>
-            <input
-              type="text"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Work Day Start</label>
-            <input
-              type="time"
-              value={workStart}
-              onChange={(e) => setWorkStart(e.target.value)}
-              className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Work Day End</label>
-            <input
-              type="time"
-              value={workEnd}
-              onChange={(e) => setWorkEnd(e.target.value)}
-              className="w-full text-xs bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground focus:outline-hidden"
-            />
+            <div className="p-3.5 flex items-center justify-between gap-4">
+              <span className="text-xs font-normal text-foreground">Timezone</span>
+              <input
+                type="text"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="text-xs text-right bg-transparent border-0 focus:outline-hidden text-foreground placeholder:text-muted-foreground font-medium"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="pt-2 flex justify-end">
+        <div className="space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
+            Working Hours
+          </span>
+          <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
+            <div className="p-3.5 flex items-center justify-between gap-4">
+              <span className="text-xs font-normal text-foreground">Start Time</span>
+              <input
+                type="time"
+                value={workStart}
+                onChange={(e) => setWorkStart(e.target.value)}
+                className="text-xs bg-transparent border-0 focus:outline-hidden text-foreground font-medium"
+              />
+            </div>
+
+            <div className="p-3.5 flex items-center justify-between gap-4">
+              <span className="text-xs font-normal text-foreground">End Time</span>
+              <input
+                type="time"
+                value={workEnd}
+                onChange={(e) => setWorkEnd(e.target.value)}
+                className="text-xs bg-transparent border-0 focus:outline-hidden text-foreground font-medium"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
           <button
             type="submit"
-            className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs"
+            className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
           >
-            Save Preferences
+            Save Changes
           </button>
         </div>
       </form>
 
-      {/* Data Export & Backup */}
-      <div className="p-6 rounded-2xl bg-card border border-border shadow-xs flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-            <Download className="w-4 h-4 text-primary" /> Data Portability & Backup
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Download a full JSON snapshot of your tasks, events, projects, notes, and habits.
-          </p>
-        </div>
+      {/* Sync Status */}
+      <div className="space-y-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
+          Storage & Sync
+        </span>
+        <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
+          <div className="p-3.5 flex items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-medium text-foreground block">Account & Sync</span>
+              <span className="text-[11px] text-muted-foreground">
+                {isAuthenticated
+                  ? `Signed in as ${profile.email || profile.full_name}`
+                  : isSupabaseConnected
+                  ? 'Cloud connected · Sign in to synchronize'
+                  : 'Running offline with local storage'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
+                  isAuthenticated
+                    ? 'bg-emerald-500/10 text-emerald-500'
+                    : isSupabaseConnected
+                    ? 'bg-amber-500/10 text-amber-500'
+                    : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                {isAuthenticated ? 'Synced' : isSupabaseConnected ? 'Signed Out' : 'Offline'}
+              </span>
 
-        <button
-          onClick={handleExportData}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/80 transition-all shrink-0"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export JSON</span>
-        </button>
+              {isAuthenticated ? (
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-secondary transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              ) : isSupabaseConnected ? (
+                <Link
+                  href="/auth/login"
+                  className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="p-3.5 flex items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-medium text-foreground block">Export Backup</span>
+              <span className="text-[11px] text-muted-foreground">
+                Download a JSON backup of your planner data.
+              </span>
+            </div>
+            <button
+              onClick={handleExportData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 tactile-btn shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

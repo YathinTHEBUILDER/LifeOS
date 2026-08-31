@@ -4,58 +4,60 @@
 
 @layer base {
   :root {
-    --background: 220 20% 98%;
-    --foreground: 224 71% 4%;
+    /* Apple Light Mode Palette */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card-foreground: 0 0% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
-    --primary: 239 84% 67%;
+    --popover-foreground: 0 0% 12%;
+    --primary: 211 100% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 94%;
-    --secondary-foreground: 220 9% 25%;
-    --muted: 220 14% 94%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 239 84% 95%;
-    --accent-foreground: 239 84% 45%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 0 0% 20%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 4% 50%;
+    --accent: 211 100% 96%;
+    --accent-foreground: 211 100% 40%;
     --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 239 84% 67%;
-    --radius: 0.85rem;
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 224 71% 4%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-accent: 239 84% 96%;
-    --sidebar-accent-foreground: 239 84% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 211 100% 45%;
+    --radius: 0.75rem;
+    --sidebar-background: 0 0% 99%;
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-border: 240 6% 92%;
+    --sidebar-accent: 240 5% 94%;
+    --sidebar-accent-foreground: 0 0% 10%;
   }
 
   .dark {
-    --background: 224 28% 7%;
-    --foreground: 210 20% 98%;
-    --card: 224 28% 10%;
-    --card-foreground: 210 20% 98%;
-    --popover: 224 28% 10%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 239 84% 67%;
+    /* Apple Dark Mode Palette */
+    --background: 0 0% 6%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 211 100% 50%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 223 20% 15%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 223 20% 14%;
-    --muted-foreground: 218 11% 65%;
-    --accent: 239 84% 20%;
-    --accent-foreground: 239 84% 85%;
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 223 20% 16%;
-    --input: 223 20% 16%;
-    --ring: 239 84% 67%;
-    --sidebar-background: 224 28% 9%;
-    --sidebar-foreground: 210 20% 98%;
-    --sidebar-border: 223 20% 15%;
-    --sidebar-accent: 239 84% 18%;
-    --sidebar-accent-foreground: 239 84% 85%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 94%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 211 100% 18%;
+    --accent-foreground: 211 100% 75%;
+    --destructive: 0 75% 58%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 211 100% 50%;
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 94%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 98%;
   }
 }
 
@@ -64,18 +66,21 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground antialiased selection:bg-primary/15 selection:text-primary;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     padding-bottom: env(safe-area-inset-bottom);
     padding-top: env(safe-area-inset-top);
   }
 }
 
-/* Custom modern scrollbars */
+/* Subtle, unobtrusive scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -91,12 +96,22 @@
   background: hsl(var(--muted-foreground) / 0.4);
 }
 
-/* Glassmorphism helpers */
-.glass-panel {
-  background: hsl(var(--card) / 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid hsl(var(--border) / 0.8);
+/* Subtle Apple blur surfaces */
+.apple-blur {
+  background: hsl(var(--card) / 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.apple-sheet-backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Tactile interactive helpers */
+.tactile-btn {
+  @apply transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
 }
 
 /* Mobile Safe-Area Utilities */
@@ -106,4 +121,16 @@
 
 .pt-safe {
   padding-top: calc(1rem + env(safe-area-inset-top));
+}
+
+/* Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

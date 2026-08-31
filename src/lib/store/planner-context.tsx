@@ -171,13 +171,43 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   const [quickAddDefaultTab, setQuickAddDefaultTab] = useState<'task' | 'event' | 'note' | 'habit'>('task');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  const saveToLocal = (key: string, data: any) => {
-    if (typeof window !== 'undefined') {
+  const saveToLocal = useCallback((key: string, data: any, explicitUid?: string) => {
+    const uid = explicitUid || userId;
+    if (typeof window !== 'undefined' && uid) {
       try {
-        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${key}`, JSON.stringify(data));
+        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${uid}_${key}`, JSON.stringify(data));
       } catch (err) {
         console.error('LocalStorage write failed:', err);
       }
+    }
+  }, [userId]);
+
+  const loadUserCache = (uid: string) => {
+    if (typeof window === 'undefined' || !uid) return;
+    try {
+      const savedProjects = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_projects`);
+      const savedTasks = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_tasks`);
+      const savedEvents = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_events`);
+      const savedHabits = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_habits`);
+      const savedHabitLogs = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_habitLogs`);
+      const savedNotes = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_notes`);
+      const savedFocus = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_focusSessions`);
+      const savedReviews = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_dailyReviews`);
+      const savedRecurringCompletions = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_recurringCompletions`);
+      const savedProfile = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${uid}_profile`);
+
+      if (savedProjects) setProjects(JSON.parse(savedProjects));
+      if (savedTasks) setTasks(JSON.parse(savedTasks));
+      if (savedEvents) setEvents(JSON.parse(savedEvents));
+      if (savedHabits) setHabits(JSON.parse(savedHabits));
+      if (savedHabitLogs) setHabitLogs(JSON.parse(savedHabitLogs));
+      if (savedNotes) setNotes(JSON.parse(savedNotes));
+      if (savedFocus) setFocusSessions(JSON.parse(savedFocus));
+      if (savedReviews) setDailyReviews(JSON.parse(savedReviews));
+      if (savedRecurringCompletions) setRecurringCompletions(JSON.parse(savedRecurringCompletions));
+      if (savedProfile) setProfile(JSON.parse(savedProfile));
+    } catch (e) {
+      console.error('Error loading stored user cache:', e);
     }
   };
 
@@ -227,7 +257,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
     setPendingSyncQueue(remaining);
     saveToLocal('syncQueue', remaining);
-  }, [supabase, isAuthenticated, pendingSyncQueue]);
+  }, [supabase, isAuthenticated, pendingSyncQueue, saveToLocal]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -240,7 +270,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeSyncStatus>('DISCONNECTED');
 
   const fetchAllFromSupabase = useCallback(async (uid: string) => {
-    if (!supabase) return;
+    if (!supabase || !uid) return;
     try {
       const [
         profileRes,
@@ -266,6 +296,36 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         supabase.from('daily_reviews').select('*').eq('user_id', uid),
       ]);
 
+      let rawTasks = (tasksRes.data as Task[]) || [];
+
+      // Safe local-to-cloud migration: if server has 0 tasks on first login, migrate existing unauthenticated localStorage tasks
+      if (rawTasks.length === 0 && typeof window !== 'undefined') {
+        try {
+          const legacySavedTasks = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}tasks`);
+          if (legacySavedTasks) {
+            const parsedLegacy: Task[] = JSON.parse(legacySavedTasks);
+            if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+              const toInsert = parsedLegacy.map((t) => {
+                const { subtasks, tags, project, is_recurring_instance, occurrence_date, ...rest } = t;
+                return {
+                  ...rest,
+                  user_id: uid,
+                  created_at: rest.created_at || new Date().toISOString(),
+                  updated_at: rest.updated_at || new Date().toISOString(),
+                };
+              });
+              const { error: insertErr } = await supabase.from('tasks').insert(toInsert);
+              if (!insertErr) {
+                rawTasks = parsedLegacy.map((t) => ({ ...t, user_id: uid }));
+                localStorage.removeItem(`${LOCAL_STORAGE_PREFIX}tasks`);
+              }
+            }
+          }
+        } catch (migErr) {
+          console.warn('Legacy tasks migration skipped:', migErr);
+        }
+      }
+
       const subtasksByTask = new Map<string, Subtask[]>();
       ((subtasksRes.data as Subtask[]) || []).forEach((s) => {
         const list = subtasksByTask.get(s.task_id) || [];
@@ -273,49 +333,49 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         subtasksByTask.set(s.task_id, list);
       });
 
-      const fetchedTasks = ((tasksRes.data as Task[]) || []).map((t) => ({
+      const fetchedTasks = rawTasks.map((t) => ({
         ...t,
-        subtasks: subtasksByTask.get(t.id) || [],
+        subtasks: subtasksByTask.get(t.id) || t.subtasks || [],
       }));
 
       if (profileRes.data) {
         setProfile(profileRes.data as UserProfile);
-        saveToLocal('profile', profileRes.data);
+        saveToLocal('profile', profileRes.data, uid);
       }
       if (projectsRes.data) {
         setProjects(projectsRes.data as Project[]);
-        saveToLocal('projects', projectsRes.data);
+        saveToLocal('projects', projectsRes.data, uid);
       }
       setTasks(fetchedTasks);
-      saveToLocal('tasks', fetchedTasks);
+      saveToLocal('tasks', fetchedTasks, uid);
       if (eventsRes.data) {
         setEvents(eventsRes.data as CalendarEvent[]);
-        saveToLocal('events', eventsRes.data);
+        saveToLocal('events', eventsRes.data, uid);
       }
       if (habitsRes.data) {
         setHabits(habitsRes.data as Habit[]);
-        saveToLocal('habits', habitsRes.data);
+        saveToLocal('habits', habitsRes.data, uid);
       }
       if (habitLogsRes.data) {
         setHabitLogs(habitLogsRes.data as HabitLog[]);
-        saveToLocal('habitLogs', habitLogsRes.data);
+        saveToLocal('habitLogs', habitLogsRes.data, uid);
       }
       if (notesRes.data) {
         setNotes(notesRes.data as Note[]);
-        saveToLocal('notes', notesRes.data);
+        saveToLocal('notes', notesRes.data, uid);
       }
       if (focusRes.data) {
         setFocusSessions(focusRes.data as FocusSession[]);
-        saveToLocal('focusSessions', focusRes.data);
+        saveToLocal('focusSessions', focusRes.data, uid);
       }
       if (reviewsRes.data) {
         setDailyReviews(reviewsRes.data as DailyReview[]);
-        saveToLocal('dailyReviews', reviewsRes.data);
+        saveToLocal('dailyReviews', reviewsRes.data, uid);
       }
     } catch (err) {
       console.error('Failed to fetch authoritative data from Supabase:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchTasksDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -336,12 +396,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
           subtasks: subtasksByTask.get(t.id) || [],
         }));
         setTasks(fetchedTasks);
-        saveToLocal('tasks', fetchedTasks);
+        saveToLocal('tasks', fetchedTasks, uid);
       }
     } catch (err) {
       console.error('Realtime tasks fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchEventsDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -349,12 +409,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('events').select('*').eq('user_id', uid);
       if (data) {
         setEvents(data as CalendarEvent[]);
-        saveToLocal('events', data);
+        saveToLocal('events', data, uid);
       }
     } catch (err) {
       console.error('Realtime events fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchHabitsDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -362,12 +422,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('habits').select('*').eq('user_id', uid);
       if (data) {
         setHabits(data as Habit[]);
-        saveToLocal('habits', data);
+        saveToLocal('habits', data, uid);
       }
     } catch (err) {
       console.error('Realtime habits fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchHabitLogsDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -375,12 +435,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('habit_logs').select('*').eq('user_id', uid);
       if (data) {
         setHabitLogs(data as HabitLog[]);
-        saveToLocal('habitLogs', data);
+        saveToLocal('habitLogs', data, uid);
       }
     } catch (err) {
       console.error('Realtime habit_logs fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchProjectsDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -388,12 +448,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('projects').select('*').eq('user_id', uid);
       if (data) {
         setProjects(data as Project[]);
-        saveToLocal('projects', data);
+        saveToLocal('projects', data, uid);
       }
     } catch (err) {
       console.error('Realtime projects fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchNotesDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -401,12 +461,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('notes').select('*').eq('user_id', uid);
       if (data) {
         setNotes(data as Note[]);
-        saveToLocal('notes', data);
+        saveToLocal('notes', data, uid);
       }
     } catch (err) {
       console.error('Realtime notes fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchFocusDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -414,12 +474,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('focus_sessions').select('*').eq('user_id', uid);
       if (data) {
         setFocusSessions(data as FocusSession[]);
-        saveToLocal('focusSessions', data);
+        saveToLocal('focusSessions', data, uid);
       }
     } catch (err) {
       console.error('Realtime focus fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchReviewsDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -427,12 +487,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('daily_reviews').select('*').eq('user_id', uid);
       if (data) {
         setDailyReviews(data as DailyReview[]);
-        saveToLocal('dailyReviews', data);
+        saveToLocal('dailyReviews', data, uid);
       }
     } catch (err) {
       console.error('Realtime daily_reviews fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const fetchProfileDomain = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -440,12 +500,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
       if (data) {
         setProfile(data as UserProfile);
-        saveToLocal('profile', data);
+        saveToLocal('profile', data, uid);
       }
     } catch (err) {
       console.error('Realtime profile fetch failed:', err);
     }
-  }, [supabase]);
+  }, [supabase, saveToLocal]);
 
   const refreshData = useCallback(async () => {
     if (userId) {
@@ -651,54 +711,28 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    const loadLocalCache = () => {
-      try {
-        if (typeof window !== 'undefined') {
-          const savedProjects = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}projects`);
-          const savedTasks = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}tasks`);
-          const savedEvents = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}events`);
-          const savedHabits = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}habits`);
-          const savedHabitLogs = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}habitLogs`);
-          const savedNotes = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}notes`);
-          const savedFocus = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}focusSessions`);
-          const savedReviews = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}dailyReviews`);
-          const savedRecurringCompletions = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}recurringCompletions`);
-          const savedQueue = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}syncQueue`);
-          const savedProfile = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}profile`);
-
-          if (savedTasks && savedEvents) {
-            if (savedProjects) setProjects(JSON.parse(savedProjects));
-            setTasks(JSON.parse(savedTasks));
-            setEvents(JSON.parse(savedEvents));
-            if (savedHabits) setHabits(JSON.parse(savedHabits));
-            if (savedHabitLogs) setHabitLogs(JSON.parse(savedHabitLogs));
-            if (savedNotes) setNotes(JSON.parse(savedNotes));
-            if (savedFocus) setFocusSessions(JSON.parse(savedFocus));
-            if (savedReviews) setDailyReviews(JSON.parse(savedReviews));
-            if (savedRecurringCompletions) setRecurringCompletions(JSON.parse(savedRecurringCompletions));
-            if (savedQueue) setPendingSyncQueue(JSON.parse(savedQueue));
-            if (savedProfile) setProfile(JSON.parse(savedProfile));
-          } else {
-            initSeedData();
-          }
-        }
-      } catch (e) {
-        console.error('Error loading stored planner state:', e);
-        initSeedData();
-      }
-    };
-
     const init = async () => {
-      loadLocalCache();
-
       if (supabase) {
         setIsSupabaseConnected(true);
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (isMounted && user) {
-            setUserId(user.id);
-            setIsAuthenticated(true);
-            await fetchAllFromSupabase(user.id);
+          if (isMounted) {
+            if (user) {
+              setUserId(user.id);
+              setIsAuthenticated(true);
+              loadUserCache(user.id);
+              await fetchAllFromSupabase(user.id);
+            } else {
+              setUserId(null);
+              setIsAuthenticated(false);
+              setTasks([]);
+              setEvents([]);
+              setHabits([]);
+              setProjects([]);
+              setNotes([]);
+              setFocusSessions([]);
+              setDailyReviews([]);
+            }
           }
         } catch (err) {
           console.error('Error checking Supabase auth session:', err);
@@ -715,10 +749,19 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user) {
           setUserId(session.user.id);
           setIsAuthenticated(true);
+          loadUserCache(session.user.id);
           await fetchAllFromSupabase(session.user.id);
         } else if (event === 'SIGNED_OUT') {
           setUserId(null);
           setIsAuthenticated(false);
+          setTasks([]);
+          setEvents([]);
+          setHabits([]);
+          setProjects([]);
+          setNotes([]);
+          setFocusSessions([]);
+          setDailyReviews([]);
+          setProfile(DEFAULT_PROFILE);
         }
       });
       authSubscription = data.subscription;
@@ -728,17 +771,40 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       authSubscription?.unsubscribe();
     };
-  }, [supabase]);
+  }, [supabase, fetchAllFromSupabase]);
 
   useEffect(() => {
     scheduleSessionReminders(events, habits);
   }, [events, habits]);
 
   const signOut = async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Sign out error:', err);
+      }
+    }
     setUserId(null);
     setIsAuthenticated(false);
+    setTasks([]);
+    setProjects([]);
+    setEvents([]);
+    setHabits([]);
+    setHabitLogs([]);
+    setNotes([]);
+    setFocusSessions([]);
+    setDailyReviews([]);
+    setProfile(DEFAULT_PROFILE);
+
+    if (typeof window !== 'undefined') {
+      try {
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith(LOCAL_STORAGE_PREFIX))
+          .forEach((k) => localStorage.removeItem(k));
+      } catch {}
+      window.location.href = '/auth/login';
+    }
     toast.success('Signed out');
   };
 

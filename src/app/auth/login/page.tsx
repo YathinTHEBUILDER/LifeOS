@@ -12,7 +12,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTarget = searchParams?.get('redirect') || '/';
 
-  const [identifier, setIdentifier] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -28,36 +28,38 @@ function LoginForm() {
       return;
     }
 
-    const trimmed = identifier.trim();
-    const emailToUse = trimmed.includes('@')
-      ? trimmed.toLowerCase()
-      : trimmed.toLowerCase() === 'yathin'
-      ? 'yathin@lifeos.app'
-      : `${trimmed.toLowerCase()}@lifeos.app`;
+    const trimmedUser = username.trim().toLowerCase();
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
+    // Map username to owner accounts
+    const primaryEmail = trimmedUser === 'yathin' ? 'yathin@lifeos.app' : `${trimmedUser}@lifeos.app`;
+    const fallbackEmail = 'yathing52@gmail.com';
+
+    // 1. Try primary owner account
+    const { data: primaryData, error: primaryError } = await supabase.auth.signInWithPassword({
+      email: primaryEmail,
       password,
     });
 
-    if (error) {
-      if (trimmed.toLowerCase() === 'yathin') {
-        const { error: fallbackErr } = await supabase.auth.signInWithPassword({
-          email: 'yathing52@gmail.com',
-          password,
-        });
-        if (!fallbackErr) {
-          toast.success('Welcome back, Yathin.');
-          window.location.href = redirectTarget;
-          return;
-        }
-      }
-      toast.error(error.message);
-      setLoading(false);
-    } else {
+    if (!primaryError && primaryData.user) {
       toast.success('Welcome back, Yathin.');
       window.location.href = redirectTarget;
+      return;
     }
+
+    // 2. Try fallback owner account
+    const { data: fallbackData, error: fallbackError } = await supabase.auth.signInWithPassword({
+      email: fallbackEmail,
+      password,
+    });
+
+    if (!fallbackError && fallbackData.user) {
+      toast.success('Welcome back, Yathin.');
+      window.location.href = redirectTarget;
+      return;
+    }
+
+    toast.error(fallbackError?.message || primaryError?.message || 'Invalid username or password.');
+    setLoading(false);
   };
 
   return (
@@ -73,14 +75,14 @@ function LoginForm() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Username or Email</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Username</label>
           <div className="relative">
             <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
             <input
               type="text"
               placeholder="Yathin"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
               autoCapitalize="none"
               autoCorrect="off"

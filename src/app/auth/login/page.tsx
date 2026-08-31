@@ -41,12 +41,22 @@ function LoginForm() {
     });
 
     if (error) {
+      if (trimmed.toLowerCase() === 'yathin') {
+        const { error: fallbackErr } = await supabase.auth.signInWithPassword({
+          email: 'yathing52@gmail.com',
+          password,
+        });
+        if (!fallbackErr) {
+          toast.success('Welcome back, Yathin.');
+          window.location.href = redirectTarget;
+          return;
+        }
+      }
       toast.error(error.message);
       setLoading(false);
     } else {
       toast.success('Welcome back, Yathin.');
-      router.push(redirectTarget);
-      router.refresh();
+      window.location.href = redirectTarget;
     }
   };
 

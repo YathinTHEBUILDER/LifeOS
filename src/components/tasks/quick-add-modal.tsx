@@ -6,6 +6,7 @@ import { usePlanner } from '@/lib/store/planner-context';
 import { Priority, EventCategory, HabitFrequency, RecurrenceRule } from '@/types';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { HABIT_ICONS, HABIT_COLORS } from '@/components/habits/habit-constants';
 
 export function QuickAddModal() {
   const {
@@ -60,6 +61,8 @@ export function QuickAddModal() {
   const [habitFreq, setHabitFreq] = useState<HabitFrequency>('daily');
   const [habitTarget, setHabitTarget] = useState<number>(7);
   const [habitReminder, setHabitReminder] = useState<string>('09:00');
+  const [habitIcon, setHabitIcon] = useState<string>('CheckCircle');
+  const [habitColor, setHabitColor] = useState<string>('#34c759');
 
   if (!isQuickAddOpen) return null;
 
@@ -138,8 +141,10 @@ export function QuickAddModal() {
       name: habitName.trim(),
       description: habitDesc.trim(),
       frequency: habitFreq,
-      target_days: habitTarget,
+      target_days: habitFreq === 'weekly' ? Math.min(7, Math.max(1, habitTarget)) : 7,
       reminder_time: habitReminder,
+      icon: habitIcon,
+      color: habitColor,
     });
 
     toast.success('Habit added');
@@ -521,20 +526,76 @@ export function QuickAddModal() {
                     type="time"
                     value={habitReminder}
                     onChange={(e) => setHabitReminder(e.target.value)}
-                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden font-mono"
                   />
                 </div>
 
-                <div className="col-span-2">
-                  <label className="text-[11px] text-muted-foreground block mb-1">Target Days / Week</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={7}
-                    value={habitTarget}
-                    onChange={(e) => setHabitTarget(Number(e.target.value))}
-                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
-                  />
+                {habitFreq === 'weekly' && (
+                  <div className="col-span-2 p-2.5 bg-secondary/30 rounded-xl border border-border/60 animate-in fade-in-50 duration-150">
+                    <label className="text-[11px] text-muted-foreground block mb-1">
+                      Target Days / Week ({habitTarget} days)
+                    </label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={7}
+                      value={habitTarget}
+                      onChange={(e) => setHabitTarget(Number(e.target.value))}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Color Swatches */}
+              <div>
+                <label className="text-[11px] text-muted-foreground block mb-1">Color</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {HABIT_COLORS.map((c) => {
+                    const isSelected = habitColor === c.hex;
+                    return (
+                      <button
+                        key={c.hex}
+                        type="button"
+                        onClick={() => setHabitColor(c.hex)}
+                        title={c.name}
+                        aria-label={`Color ${c.name}`}
+                        className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                          isSelected ? 'ring-2 ring-primary ring-offset-1 scale-110' : 'hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: c.hex }}
+                      >
+                        {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Icon Grid */}
+              <div>
+                <label className="text-[11px] text-muted-foreground block mb-1">Icon</label>
+                <div className="grid grid-cols-8 gap-1 max-h-28 overflow-y-auto p-1 bg-secondary/20 rounded-xl border border-border/50">
+                  {HABIT_ICONS.map((item) => {
+                    const IconComponent = item.icon;
+                    const isSelected = habitIcon === item.name;
+                    return (
+                      <button
+                        key={item.name}
+                        type="button"
+                        onClick={() => setHabitIcon(item.name)}
+                        title={item.label}
+                        aria-label={`Icon ${item.label}`}
+                        className={`h-7 rounded-lg flex items-center justify-center transition-colors ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                        }`}
+                      >
+                        <IconComponent className="w-3.5 h-3.5" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

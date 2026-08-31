@@ -75,7 +75,10 @@ interface PlannerContextType {
   // Habit Actions
   addHabit: (habit: Partial<Habit> & { name: string }) => Habit;
   updateHabit: (id: string, updates: Partial<Habit>) => void;
+  cycleHabitLogState: (habitId: string, date: string) => void;
   toggleHabitForDate: (habitId: string, date: string) => void;
+  archiveHabit: (id: string) => void;
+  restoreHabit: (id: string) => void;
   deleteHabit: (id: string) => void;
   getHabitStreak: (habitId: string) => number;
 
@@ -777,7 +780,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       description: habitData.description || '',
       frequency: habitData.frequency || 'daily',
       target_days: habitData.target_days || 7,
-      color: habitData.color || '#10B981',
+      color: habitData.color || '#34c759',
       icon: habitData.icon || 'CheckCircle',
       is_active: true,
       reminder_time: habitData.reminder_time || '09:00',
@@ -804,31 +807,61 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     syncUpdate('habits', id, { ...dbUpdates, updated_at: new Date().toISOString() });
   };
 
-  const toggleHabitForDate = (habitId: string, date: string) => {
+  const cycleHabitLogState = (habitId: string, date: string) => {
     const existing = habitLogs.find((log) => log.habit_id === habitId && log.date === date);
-    if (existing) {
-      setHabitLogs((prev) => {
-        const updated = prev.filter((log) => log.id !== existing.id);
-        saveToLocal('habitLogs', updated);
-        return updated;
-      });
-      syncDelete('habit_logs', existing.id);
-    } else {
+
+    if (!existing || (!existing.completed && !existing.excused)) {
+      // Clear -> Done
       const newLog: HabitLog = {
-        id: generateId(),
+        id: existing?.id || generateId(),
         habit_id: habitId,
         user_id: effectiveUserId,
         date,
         completed: true,
+        excused: false,
         created_at: new Date().toISOString(),
       };
       setHabitLogs((prev) => {
-        const updated = [...prev, newLog];
+        const filtered = prev.filter((l) => !(l.habit_id === habitId && l.date === date));
+        const updated = [...filtered, newLog];
         saveToLocal('habitLogs', updated);
         return updated;
       });
       syncInsert('habit_logs', newLog);
+    } else if (existing.completed && !existing.excused) {
+      // Done -> Rest Day (Excused)
+      const updatedLog: HabitLog = {
+        ...existing,
+        completed: false,
+        excused: true,
+      };
+      setHabitLogs((prev) => {
+        const updated = prev.map((l) => (l.id === existing.id ? updatedLog : l));
+        saveToLocal('habitLogs', updated);
+        return updated;
+      });
+      syncUpdate('habit_logs', existing.id, { completed: false, excused: true });
+    } else {
+      // Rest Day -> Clear
+      setHabitLogs((prev) => {
+        const updated = prev.filter((l) => l.id !== existing.id);
+        saveToLocal('habitLogs', updated);
+        return updated;
+      });
+      syncDelete('habit_logs', existing.id);
     }
+  };
+
+  const toggleHabitForDate = (habitId: string, date: string) => {
+    cycleHabitLogState(habitId, date);
+  };
+
+  const archiveHabit = (id: string) => {
+    updateHabit(id, { is_active: false });
+  };
+
+  const restoreHabit = (id: string) => {
+    updateHabit(id, { is_active: true });
   };
 
   const deleteHabit = (id: string) => {
@@ -852,17 +885,31 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     let streak = 0;
 
     if (habit.frequency === 'weekdays') {
-      for (let i = 0; i < 90; i++) {
+      for (let i = 0; i < 180; i++) {
         const checkDate = subDays(today, i);
         const dateStr = format(checkDate, 'yyyy-MM-dd');
-        const isLogged = habitLogs.some((l) => l.habit_id === habitId && l.date === dateStr && l.completed);
-        if (isWeekend(checkDate)) {
-          if (isLogged) streak++;
+        const log = habitLogs.find((l) => l.habit_id === habitId && l.date === dateStr);
+        const isDone = Boolean(log && log.completed && !log.excused);
+        const isExcused = Boolean(log && log.excused);
+        const isWeekendDay = isWeekend(checkDate);
+
+        if (isWeekendDay) {
+          if (isDone) streak++;
           continue;
         }
-        if (isLogged) streak++;
-        else if (i === 0) continue;
-        else break;
+
+        if (isDone) {
+          streak++;
+        } else if (isExcused) {
+          // Neutral rest day on weekday: does not break streak
+          continue;
+        } else if (i === 0) {
+          // Today not done yet: do not break streak yet, check earlier days
+          continue;
+        } else {
+          // Missed weekday: streak breaks
+          break;
+        }
       }
       return streak;
     }
@@ -873,24 +920,48 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         const weekDate = subWeeks(today, w);
         const start = startOfWeek(weekDate, { weekStartsOn: 1 });
         const end = endOfWeek(weekDate, { weekStartsOn: 1 });
-        const countInWeek = habitLogs.filter((l) => {
-          if (l.habit_id !== habitId || !l.completed) return false;
+        const weekLogs = habitLogs.filter((l) => {
+          if (l.habit_id !== habitId) return false;
           const logDate = parseISO(l.date);
           return logDate >= start && logDate <= end;
-        }).length;
-        if (countInWeek >= target) streak++;
-        else if (w === 0) continue;
-        else break;
+        });
+
+        const completedCount = weekLogs.filter((l) => l.completed && !l.excused).length;
+        const excusedCount = weekLogs.filter((l) => l.excused).length;
+        const effectiveTarget = Math.max(1, target - excusedCount);
+
+        if (completedCount >= target || (excusedCount > 0 && completedCount >= effectiveTarget)) {
+          streak++;
+        } else if (w === 0) {
+          // Current week still in progress
+          continue;
+        } else {
+          break;
+        }
       }
       return streak;
     }
 
-    for (let i = 0; i < 90; i++) {
-      const dateStr = format(subDays(today, i), 'yyyy-MM-dd');
-      const isLogged = habitLogs.some((l) => l.habit_id === habitId && l.date === dateStr && l.completed);
-      if (isLogged) streak++;
-      else if (i === 0) continue;
-      else break;
+    // Default: 'daily'
+    for (let i = 0; i < 180; i++) {
+      const checkDate = subDays(today, i);
+      const dateStr = format(checkDate, 'yyyy-MM-dd');
+      const log = habitLogs.find((l) => l.habit_id === habitId && l.date === dateStr);
+      const isDone = Boolean(log && log.completed && !log.excused);
+      const isExcused = Boolean(log && log.excused);
+
+      if (isDone) {
+        streak++;
+      } else if (isExcused) {
+        // Neutral rest day: does not increment streak, does not break streak
+        continue;
+      } else if (i === 0) {
+        // Today not logged yet: continue to check yesterday
+        continue;
+      } else {
+        // Missed day: streak broke
+        break;
+      }
     }
     return streak;
   };
@@ -1140,7 +1211,10 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     deleteProject,
     addHabit,
     updateHabit,
+    cycleHabitLogState,
     toggleHabitForDate,
+    archiveHabit,
+    restoreHabit,
     deleteHabit,
     getHabitStreak,
     addNote,

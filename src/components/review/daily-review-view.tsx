@@ -46,7 +46,7 @@ export function DailyReviewView() {
     })
     .reduce((acc, s) => acc + s.duration_minutes, 0);
 
-  const habitsDoneCount = habitLogs.filter((l) => l.date === todayStr && l.completed).length;
+  const habitsDoneCount = habitLogs.filter((l) => l.date === todayStr && l.completed && !l.excused).length;
 
   // --------------------------------------------------------------------------
   // WEEK / MONTH ROLLUP CALCULATIONS
@@ -245,7 +245,7 @@ export function DailyReviewView() {
             </div>
 
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">What didn't get done and why?</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">What didn&apos;t get done and why?</label>
               <textarea
                 placeholder="Obstacles, interruptions, or shifts in priority..."
                 value={whatDidntGetDone}

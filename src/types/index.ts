@@ -4,7 +4,7 @@ export type TaskStatus = 'inbox' | 'todo' | 'scheduled' | 'in_progress' | 'compl
 
 export type EventCategory = 'task_block' | 'routine' | 'meeting' | 'focus' | 'break' | 'personal' | 'class';
 
-export type HabitFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
+export type HabitFrequency = 'daily' | 'weekdays' | 'weekly';
 
 export type RecurrenceRule = 'daily' | 'weekdays' | 'weekly' | 'monthly' | null;
 
@@ -142,6 +142,7 @@ export interface HabitLog {
   user_id: string;
   date: string; // YYYY-MM-DD
   completed: boolean;
+  excused: boolean;
   created_at: string;
 }
 

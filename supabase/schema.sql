@@ -123,11 +123,12 @@ create table if not exists public.habits (
   user_id uuid references auth.users on delete cascade not null,
   name text not null,
   description text default '',
-  frequency text default 'daily' check (frequency in ('daily', 'weekdays', 'weekly', 'custom')),
+  frequency text default 'daily' check (frequency in ('daily', 'weekdays', 'weekly')),
   target_days integer default 7, -- days per week
-  color text default '#10B981',
+  color text default '#34c759',
   icon text default 'CheckCircle',
   is_active boolean default true not null,
+  reminder_time text default '09:00',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -141,6 +142,7 @@ create table if not exists public.habit_logs (
   user_id uuid references auth.users on delete cascade not null,
   date date not null,
   completed boolean default true not null,
+  excused boolean default false not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique (habit_id, date)
 );

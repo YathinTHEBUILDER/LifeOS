@@ -9,6 +9,7 @@ import {
   Play,
   MapPin,
   Check,
+  Moon,
 } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
 import { format, parseISO, isWithinInterval, differenceInMinutes } from 'date-fns';
@@ -172,7 +173,7 @@ export function TodayTimeline() {
               </div>
             ) : (
               <div>
-                <h3 className="text-base font-medium text-foreground tracking-tight">You're free</h3>
+                <h3 className="text-base font-medium text-foreground tracking-tight">You&apos;re free</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Nothing scheduled right now.</p>
               </div>
             )}
@@ -425,50 +426,67 @@ export function TodayTimeline() {
             </div>
 
             <div className="space-y-1.5">
-              {habits.length === 0 ? (
+              {habits.filter((h) => h.is_active !== false).length === 0 ? (
                 <div className="p-6 text-center rounded-xl bg-card border border-border/60 text-xs text-muted-foreground">
                   No habits active yet.
                 </div>
               ) : (
-                habits.slice(0, 4).map((habit) => {
-                  const isCompleted = habitLogs.some(
-                    (l) => l.habit_id === habit.id && l.date === todayStr && l.completed
-                  );
-                  return (
-                    <button
-                      type="button"
-                      key={habit.id}
-                      onClick={() => toggleHabitForDate(habit.id, todayStr)}
-                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
-                        isCompleted
-                          ? 'bg-secondary/60 border-border/80'
-                          : 'bg-card border-border/80 hover:bg-secondary/30'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className={`w-4 h-4 rounded-md flex items-center justify-center transition-colors ${
-                            isCompleted
-                              ? 'bg-emerald-500 text-white'
-                              : 'border border-muted-foreground/60'
-                          }`}
-                        >
-                          {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                habits
+                  .filter((h) => h.is_active !== false)
+                  .slice(0, 5)
+                  .map((habit) => {
+                    const log = habitLogs.find(
+                      (l) => l.habit_id === habit.id && l.date === todayStr
+                    );
+                    const isCompleted = Boolean(log && log.completed && !log.excused);
+                    const isRest = Boolean(log && log.excused);
+                    const habitColorHex = habit.color || '#34c759';
+
+                    return (
+                      <button
+                        type="button"
+                        key={habit.id}
+                        onClick={() => toggleHabitForDate(habit.id, todayStr)}
+                        className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
+                          isCompleted
+                            ? 'bg-secondary/60 border-border/80'
+                            : isRest
+                            ? 'bg-amber-500/10 border-amber-500/30'
+                            : 'bg-card border-border/80 hover:bg-secondary/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`w-4 h-4 rounded-md flex items-center justify-center transition-colors ${
+                              isCompleted
+                                ? 'text-white'
+                                : isRest
+                                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                                : 'border border-muted-foreground/60'
+                            }`}
+                            style={isCompleted ? { backgroundColor: habitColorHex } : undefined}
+                          >
+                            {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                            {isRest && <Moon className="w-2.5 h-2.5 stroke-[2.5]" />}
+                          </div>
+                          <span
+                            className={`text-xs truncate ${
+                              isCompleted
+                                ? 'text-foreground font-medium'
+                                : isRest
+                                ? 'text-amber-600 dark:text-amber-400 font-medium'
+                                : 'text-muted-foreground'
+                            }`}
+                          >
+                            {habit.name}
+                          </span>
                         </div>
-                        <span
-                          className={`text-xs truncate ${
-                            isCompleted ? 'text-foreground font-medium' : 'text-muted-foreground'
-                          }`}
-                        >
-                          {habit.name}
+                        <span className="text-[10px] text-muted-foreground capitalize">
+                          {isRest ? 'Rest day' : habit.frequency}
                         </span>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground capitalize">
-                        {habit.frequency}
-                      </span>
-                    </button>
-                  );
-                })
+                      </button>
+                    );
+                  })
               )}
             </div>
           </div>

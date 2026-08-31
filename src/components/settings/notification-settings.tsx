@@ -147,7 +147,7 @@ export function NotificationSettings() {
               <span className="font-semibold block text-destructive">Notifications are blocked</span>
               <span className="text-muted-foreground text-[11px]">
                 Your browser or operating system settings are blocking notifications for LifeOS.
-                Please click the lock/settings icon next to the URL address bar and change Notifications to "Allow".
+                Please click the lock/settings icon next to the URL address bar and change Notifications to &quot;Allow&quot;.
               </span>
             </div>
           </div>
@@ -170,7 +170,7 @@ export function NotificationSettings() {
               </div>
               <div className="flex items-center gap-2 p-2 rounded-lg bg-background/60 border border-border/60">
                 <PlusSquare className="w-3.5 h-3.5 text-primary" />
-                <span>2. Tap "Add to Home Screen"</span>
+                <span>2. Tap &quot;Add to Home Screen&quot;</span>
               </div>
             </div>
           </div>
@@ -253,7 +253,7 @@ export function NotificationSettings() {
                   <span className="text-xs font-medium text-foreground block">Next Activity Prompt</span>
                 </div>
                 <span className="text-[11px] text-muted-foreground">
-                  Signature LifeOS prompt: "NEXT — Python Assignment starts in 15 minutes."
+                  Signature LifeOS prompt: &quot;NEXT — Python Assignment starts in 15 minutes.&quot;
                 </span>
               </div>
               <input
@@ -284,7 +284,7 @@ export function NotificationSettings() {
               <div>
                 <span className="text-xs font-medium text-foreground block">Free Time Gap Notification</span>
                 <span className="text-[11px] text-muted-foreground">
-                  Quietly let you know when you have a 2+ hour break between tasks ("You have 2 hours free").
+                  Quietly let you know when you have a 2+ hour break between tasks (&quot;You have 2 hours free&quot;).
                 </span>
               </div>
               <input
@@ -324,7 +324,7 @@ export function NotificationSettings() {
               <div>
                 <span className="text-xs font-medium text-foreground block">Due Soon Reminders</span>
                 <span className="text-[11px] text-muted-foreground">
-                  Send reminder 30 minutes before task due time ("DB assignment is due in 30 minutes").
+                  Send reminder 30 minutes before task due time (&quot;DB assignment is due in 30 minutes&quot;).
                 </span>
               </div>
               <input
@@ -477,7 +477,7 @@ export function NotificationSettings() {
               <div className="p-6 text-center text-muted-foreground">
                 <Smartphone className="w-6 h-6 mx-auto mb-1.5 opacity-50" />
                 <p className="text-xs font-medium">No registered devices</p>
-                <p className="text-[11px] mt-0.5">Click "Enable Notifications" above to link this device.</p>
+                <p className="text-[11px] mt-0.5">Click &quot;Enable Notifications&quot; above to link this device.</p>
               </div>
             ) : (
               devices.map((device) => {

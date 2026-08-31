@@ -107,11 +107,9 @@ function LoginForm() {
         </button>
       </form>
 
-      <div className="pt-2 text-center text-xs text-muted-foreground">
-        First time setup?{' '}
-        <Link href="/auth/signup" className="font-semibold text-primary hover:underline">
-          Create owner account
-        </Link>
+      <div className="pt-2 text-center text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
+        <Lock className="w-3 h-3 text-muted-foreground/70" />
+        <span>LifeOS · Private Single-Owner System</span>
       </div>
     </div>
   );

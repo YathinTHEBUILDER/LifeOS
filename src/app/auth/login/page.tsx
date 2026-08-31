@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Compass, Mail, Lock, ArrowRight } from 'lucide-react';
+import { Compass, User, Lock, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
@@ -12,7 +12,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTarget = searchParams?.get('redirect') || '/';
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -28,8 +28,15 @@ function LoginForm() {
       return;
     }
 
+    const trimmed = identifier.trim();
+    const emailToUse = trimmed.includes('@')
+      ? trimmed.toLowerCase()
+      : trimmed.toLowerCase() === 'yathin'
+      ? 'yathin@lifeos.app'
+      : `${trimmed.toLowerCase()}@lifeos.app`;
+
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailToUse,
       password,
     });
 
@@ -37,7 +44,7 @@ function LoginForm() {
       toast.error(error.message);
       setLoading(false);
     } else {
-      toast.success('Welcome back.');
+      toast.success('Welcome back, Yathin.');
       router.push(redirectTarget);
       router.refresh();
     }
@@ -56,15 +63,17 @@ function LoginForm() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Email</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Username or Email</label>
           <div className="relative">
-            <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
+            <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
             <input
-              type="email"
-              placeholder="your.email@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              placeholder="Yathin"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
+              autoCapitalize="none"
+              autoCorrect="off"
               className="w-full text-xs pl-10 pr-3 py-2.5 bg-secondary/50 border border-border rounded-xl focus:outline-hidden text-foreground placeholder:text-muted-foreground"
             />
           </div>

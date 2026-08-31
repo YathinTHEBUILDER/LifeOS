@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
-import { Priority, EventCategory, HabitFrequency } from '@/types';
+import { Priority, EventCategory, HabitFrequency, RecurrenceRule } from '@/types';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -36,6 +36,7 @@ export function QuickAddModal() {
   const [taskPriority, setTaskPriority] = useState<Priority>('medium');
   const [taskDuration, setTaskDuration] = useState<number>(30);
   const [taskDueDate, setTaskDueDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [taskRecurrence, setTaskRecurrence] = useState<RecurrenceRule>(null);
   const [taskProjectId, setTaskProjectId] = useState<string>('');
 
   // Event Form State
@@ -44,6 +45,7 @@ export function QuickAddModal() {
   const [eventEndTime, setEventEndTime] = useState('15:00');
   const [eventDate, setEventDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [eventCategory, setEventCategory] = useState<EventCategory>('task_block');
+  const [eventRecurrence, setEventRecurrence] = useState<RecurrenceRule>(null);
   const [eventLocation, setEventLocation] = useState('');
 
   // Note Form State
@@ -57,6 +59,7 @@ export function QuickAddModal() {
   const [habitDesc, setHabitDesc] = useState('');
   const [habitFreq, setHabitFreq] = useState<HabitFrequency>('daily');
   const [habitTarget, setHabitTarget] = useState<number>(7);
+  const [habitReminder, setHabitReminder] = useState<string>('09:00');
 
   if (!isQuickAddOpen) return null;
 
@@ -75,12 +78,14 @@ export function QuickAddModal() {
       priority: taskPriority,
       estimated_duration: Number(taskDuration) || 30,
       due_date: taskDueDate || null,
+      recurrence_rule: taskRecurrence,
       project_id: taskProjectId || null,
     });
 
     toast.success('Task added');
     setTaskTitle('');
     setTaskDescription('');
+    setTaskRecurrence(null);
     handleClose();
   };
 
@@ -96,12 +101,15 @@ export function QuickAddModal() {
       start_time: startIso,
       end_time: endIso,
       category: eventCategory,
+      recurrence_rule: eventRecurrence,
       location: eventLocation.trim(),
       project_id: taskProjectId || null,
     });
 
     toast.success('Event scheduled');
     setEventTitle('');
+    setEventLocation('');
+    setEventRecurrence(null);
     handleClose();
   };
 
@@ -131,6 +139,7 @@ export function QuickAddModal() {
       description: habitDesc.trim(),
       frequency: habitFreq,
       target_days: habitTarget,
+      reminder_time: habitReminder,
     });
 
     toast.success('Habit added');
@@ -254,6 +263,21 @@ export function QuickAddModal() {
                     </div>
 
                     <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Repeats</label>
+                      <select
+                        value={taskRecurrence || ''}
+                        onChange={(e) => setTaskRecurrence((e.target.value || null) as RecurrenceRule)}
+                        className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                      >
+                        <option value="">Never</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekdays">Every Weekday</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-2">
                       <label className="text-[11px] text-muted-foreground block mb-1">Project</label>
                       <select
                         value={taskProjectId}
@@ -350,6 +374,21 @@ export function QuickAddModal() {
                     onChange={(e) => setEventEndTime(e.target.value)}
                     className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
                   />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-[11px] text-muted-foreground block mb-1">Repeats</label>
+                  <select
+                    value={eventRecurrence || ''}
+                    onChange={(e) => setEventRecurrence((e.target.value || null) as RecurrenceRule)}
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                  >
+                    <option value="">Never</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekdays">Every Weekday</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                 </div>
               </div>
 
@@ -477,6 +516,16 @@ export function QuickAddModal() {
                 </div>
 
                 <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">Reminder Time</label>
+                  <input
+                    type="time"
+                    value={habitReminder}
+                    onChange={(e) => setHabitReminder(e.target.value)}
+                    className="w-full text-xs bg-secondary/50 border border-border/80 rounded-lg px-2.5 py-1.5 text-foreground focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="col-span-2">
                   <label className="text-[11px] text-muted-foreground block mb-1">Target Days / Week</label>
                   <input
                     type="number"

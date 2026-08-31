@@ -32,7 +32,14 @@ import { toast } from 'sonner';
 type ViewMode = 'day' | 'week' | 'month' | 'agenda';
 
 export function CalendarView() {
-  const { events, updateEvent, deleteEvent, toggleEventCompletion, openQuickAdd } = usePlanner();
+  const {
+    events,
+    updateEvent,
+    deleteEvent,
+    toggleEventCompletion,
+    openQuickAdd,
+    getExpandedEventsForRange,
+  } = usePlanner();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -75,10 +82,16 @@ export function CalendarView() {
   };
 
   const days = getDaysToRender();
+  const startRange = days[0] || currentDate;
+  const endRange = days[days.length - 1] || currentDate;
+
+  const visibleEvents = React.useMemo(() => {
+    return getExpandedEventsForRange(startRange, endRange);
+  }, [getExpandedEventsForRange, startRange, endRange, events]);
 
   // Get events for a specific day
   const getEventsForDay = (day: Date) => {
-    return events.filter((e) => {
+    return visibleEvents.filter((e) => {
       try {
         return isSameDay(parseISO(e.start_time), day);
       } catch {

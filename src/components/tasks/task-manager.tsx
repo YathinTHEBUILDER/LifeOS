@@ -211,7 +211,7 @@ export function TaskManager() {
                   </button>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span
                         className={`text-xs truncate ${
                           isCompleted ? 'line-through text-muted-foreground' : 'text-foreground font-normal'
@@ -219,6 +219,12 @@ export function TaskManager() {
                       >
                         {task.title}
                       </span>
+
+                      {task.recurrence_rule && (
+                        <span className="text-[10px] text-primary/80 bg-primary/10 px-1.5 py-0.2 rounded font-medium shrink-0 capitalize">
+                          🔁 {task.recurrence_rule}
+                        </span>
+                      )}
 
                       {task.project && (
                         <span className="text-[10px] text-muted-foreground font-medium shrink-0">

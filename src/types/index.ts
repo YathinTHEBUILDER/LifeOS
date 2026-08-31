@@ -6,6 +6,26 @@ export type EventCategory = 'task_block' | 'routine' | 'meeting' | 'focus' | 'br
 
 export type HabitFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
 
+export type RecurrenceRule = 'daily' | 'weekdays' | 'weekly' | 'monthly' | null;
+
+export interface RecurringCompletion {
+  id: string;
+  user_id: string;
+  item_id: string; // task_id or event_id
+  date: string; // YYYY-MM-DD
+  item_type: 'task' | 'event';
+  completed: boolean;
+  completed_at: string;
+}
+
+export interface SyncQueueItem {
+  id: string;
+  table: string;
+  op: 'insert' | 'update' | 'delete' | 'upsert';
+  payload: any;
+  created_at: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -15,6 +35,7 @@ export interface UserProfile {
   work_start_time: string;
   work_end_time: string;
   daily_intention?: string;
+  notifications_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -62,7 +83,7 @@ export interface Task {
   due_time?: string | null; // HH:mm
   estimated_duration: number; // minutes
   actual_duration: number; // minutes
-  recurrence_rule?: string | null;
+  recurrence_rule?: RecurrenceRule;
   notes?: string;
   completed_at?: string | null;
   created_at: string;
@@ -71,6 +92,8 @@ export interface Task {
   tags?: Tag[];
   // Joined or runtime properties
   project?: Project;
+  is_recurring_instance?: boolean;
+  occurrence_date?: string;
 }
 
 export interface CalendarEvent {
@@ -87,12 +110,14 @@ export interface CalendarEvent {
   category: EventCategory;
   location?: string;
   is_completed: boolean;
-  recurrence_rule?: string | null;
+  recurrence_rule?: RecurrenceRule;
   created_at: string;
   updated_at: string;
   // Joined or runtime
   task?: Task;
   project?: Project;
+  is_recurring_instance?: boolean;
+  occurrence_date?: string;
 }
 
 export interface Habit {
@@ -105,6 +130,7 @@ export interface Habit {
   color: string;
   icon: string;
   is_active: boolean;
+  reminder_time?: string; // HH:mm
   created_at: string;
   updated_at: string;
   logs?: HabitLog[];
@@ -158,3 +184,4 @@ export interface DailyReview {
   rating?: number; // 1-5
   created_at: string;
 }
+

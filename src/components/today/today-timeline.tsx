@@ -28,6 +28,8 @@ export function TodayTimeline() {
     openQuickAdd,
     profile,
     updateDailyIntention,
+    getExpandedTasksForDate,
+    getExpandedEventsForRange,
   } = usePlanner();
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -45,19 +47,12 @@ export function TodayTimeline() {
 
   const todayStr = format(currentTime, 'yyyy-MM-dd');
 
-  // Filter today's events sorted by start time
-  const todayEvents = events
-    .filter((e) => {
-      try {
-        return isSameDay(parseISO(e.start_time), currentTime);
-      } catch {
-        return false;
-      }
-    })
+  // Filter today's events with recurring expansion
+  const todayEvents = getExpandedEventsForRange(currentTime, currentTime)
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-  // Filter today's tasks
-  const todayTasks = tasks.filter((t) => t.due_date === todayStr || t.status === 'scheduled');
+  // Filter today's tasks with recurring expansion
+  const todayTasks = getExpandedTasksForDate(todayStr);
   const completedTasks = todayTasks.filter((t) => t.status === 'completed');
 
   // Find Happening Now and Up Next

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Task,
   Project,
@@ -15,9 +15,25 @@ import {
   Priority,
   TaskStatus,
   EventCategory,
+  RecurrenceRule,
+  RecurringCompletion,
+  SyncQueueItem,
 } from '@/types';
 import { createClient } from '@/lib/supabase/client';
-import { format, addDays, subDays, startOfWeek, isSameDay, parseISO } from 'date-fns';
+import {
+  format,
+  addDays,
+  subDays,
+  startOfWeek,
+  endOfWeek,
+  isSameDay,
+  parseISO,
+  getDay,
+  getDate,
+  isWeekend,
+  subWeeks,
+} from 'date-fns';
+import { scheduleSessionReminders } from '@/lib/notifications';
 import { toast } from 'sonner';
 
 interface PlannerContextType {
@@ -31,6 +47,7 @@ interface PlannerContextType {
   focusSessions: FocusSession[];
   dailyReviews: DailyReview[];
   profile: UserProfile;
+  recurringCompletions: RecurringCompletion[];
   isSupabaseConnected: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -39,14 +56,16 @@ interface PlannerContextType {
   addTask: (task: Partial<Task> & { title: string }) => Task;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
-  toggleTaskCompletion: (id: string) => void;
+  toggleTaskCompletion: (id: string, occurrenceDate?: string) => void;
+  getExpandedTasksForDate: (dateStr: string) => Task[];
 
   // Event & Time-Blocking Actions
   addEvent: (event: Partial<CalendarEvent> & { title: string; start_time: string; end_time: string }) => CalendarEvent;
   updateEvent: (id: string, updates: Partial<CalendarEvent>) => void;
   deleteEvent: (id: string) => void;
   scheduleTaskAsEvent: (taskId: string, startTime: string, durationMinutes?: number) => CalendarEvent | null;
-  toggleEventCompletion: (id: string) => void;
+  toggleEventCompletion: (id: string, occurrenceDate?: string) => void;
+  getExpandedEventsForRange: (startDate: Date, endDate: Date) => CalendarEvent[];
 
   // Project Actions
   addProject: (project: Partial<Project> & { name: string }) => Project;
@@ -55,6 +74,7 @@ interface PlannerContextType {
 
   // Habit Actions
   addHabit: (habit: Partial<Habit> & { name: string }) => Habit;
+  updateHabit: (id: string, updates: Partial<Habit>) => void;
   toggleHabitForDate: (habitId: string, date: string) => void;
   deleteHabit: (id: string) => void;
   getHabitStreak: (habitId: string) => number;
@@ -73,6 +93,9 @@ interface PlannerContextType {
   updateDailyIntention: (intention: string) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   saveDailyReview: (review: Partial<DailyReview> & { date: string }) => void;
+
+  // Data Import / Export
+  importData: (jsonPayload: any) => boolean;
 
   // Auth
   signOut: () => Promise<void>;
@@ -101,11 +124,11 @@ const DEFAULT_PROFILE: UserProfile = {
   work_start_time: '09:00',
   work_end_time: '18:00',
   daily_intention: 'Focus on shipping InvoiceFlow MVP and completing the database assignment.',
+  notifications_enabled: false,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
 
-// Real UUIDs are required once records need to sync to Supabase's `uuid` columns.
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -129,21 +152,200 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
   const [dailyReviews, setDailyReviews] = useState<DailyReview[]>([]);
+  const [recurringCompletions, setRecurringCompletions] = useState<RecurringCompletion[]>([]);
+  const [pendingSyncQueue, setPendingSyncQueue] = useState<SyncQueueItem[]>([]);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Effective owner id for any record created right now: the real authenticated
-  // user when signed in via Supabase, otherwise the local demo profile id.
   const effectiveUserId = userId || profile.id;
 
-  // Global dialog states
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [quickAddDefaultTab, setQuickAddDefaultTab] = useState<'task' | 'event' | 'note' | 'habit'>('task');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  // Initialize seed data if empty (used for the anonymous, local-only demo experience)
+  const saveToLocal = (key: string, data: any) => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${key}`, JSON.stringify(data));
+      } catch (err) {
+        console.error('LocalStorage write failed:', err);
+      }
+    }
+  };
+
+  const enqueueSyncOperation = (table: string, op: 'insert' | 'update' | 'delete' | 'upsert', payload: any) => {
+    const item: SyncQueueItem = {
+      id: generateId(),
+      table,
+      op,
+      payload,
+      created_at: new Date().toISOString(),
+    };
+    setPendingSyncQueue((prev) => {
+      const next = [...prev, item];
+      saveToLocal('syncQueue', next);
+      return next;
+    });
+  };
+
+  const drainSyncQueue = useCallback(async () => {
+    if (!supabase || !isAuthenticated) return;
+    const queue = pendingSyncQueue;
+    if (queue.length === 0) return;
+
+    const remaining: SyncQueueItem[] = [];
+
+    for (const item of queue) {
+      try {
+        if (item.op === 'insert') {
+          const { error } = await supabase.from(item.table).insert(item.payload);
+          if (error) throw error;
+        } else if (item.op === 'update') {
+          const { id, ...updates } = item.payload;
+          const { error } = await supabase.from(item.table).update(updates).eq('id', id);
+          if (error) throw error;
+        } else if (item.op === 'delete') {
+          const { error } = await supabase.from(item.table).delete().eq('id', item.payload.id);
+          if (error) throw error;
+        } else if (item.op === 'upsert') {
+          const { error } = await supabase.from(item.table).upsert(item.payload);
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.error(`Retry sync failed for ${item.table}:`, err);
+        remaining.push(item);
+      }
+    }
+
+    setPendingSyncQueue(remaining);
+    saveToLocal('syncQueue', remaining);
+  }, [supabase, isAuthenticated, pendingSyncQueue]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      drainSyncQueue();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [drainSyncQueue]);
+
+  const fetchAllFromSupabase = async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const [
+        profileRes,
+        projectsRes,
+        tasksRes,
+        subtasksRes,
+        eventsRes,
+        habitsRes,
+        habitLogsRes,
+        notesRes,
+        focusRes,
+        reviewsRes,
+      ] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+        supabase.from('projects').select('*').eq('user_id', uid),
+        supabase.from('tasks').select('*').eq('user_id', uid),
+        supabase.from('task_subtasks').select('*').eq('user_id', uid).order('sort_order', { ascending: true }),
+        supabase.from('events').select('*').eq('user_id', uid),
+        supabase.from('habits').select('*').eq('user_id', uid),
+        supabase.from('habit_logs').select('*').eq('user_id', uid),
+        supabase.from('notes').select('*').eq('user_id', uid),
+        supabase.from('focus_sessions').select('*').eq('user_id', uid),
+        supabase.from('daily_reviews').select('*').eq('user_id', uid),
+      ]);
+
+      const subtasksByTask = new Map<string, Subtask[]>();
+      ((subtasksRes.data as Subtask[]) || []).forEach((s) => {
+        const list = subtasksByTask.get(s.task_id) || [];
+        list.push(s);
+        subtasksByTask.set(s.task_id, list);
+      });
+
+      const fetchedTasks = ((tasksRes.data as Task[]) || []).map((t) => ({
+        ...t,
+        subtasks: subtasksByTask.get(t.id) || [],
+      }));
+
+      if (profileRes.data) setProfile(profileRes.data as UserProfile);
+      setProjects((projectsRes.data as Project[]) || []);
+      setTasks(fetchedTasks);
+      setEvents((eventsRes.data as CalendarEvent[]) || []);
+      setHabits((habitsRes.data as Habit[]) || []);
+      setHabitLogs((habitLogsRes.data as HabitLog[]) || []);
+      setNotes((notesRes.data as Note[]) || []);
+      setFocusSessions((focusRes.data as FocusSession[]) || []);
+      setDailyReviews((reviewsRes.data as DailyReview[]) || []);
+
+      if (profileRes.data) saveToLocal('profile', profileRes.data);
+      saveToLocal('projects', projectsRes.data);
+      saveToLocal('tasks', fetchedTasks);
+      saveToLocal('events', eventsRes.data);
+      saveToLocal('habits', habitsRes.data);
+      saveToLocal('habitLogs', habitLogsRes.data);
+      saveToLocal('notes', notesRes.data);
+      saveToLocal('focusSessions', focusRes.data);
+      saveToLocal('dailyReviews', reviewsRes.data);
+    } catch (err) {
+      console.error('Failed to fetch data from Supabase:', err);
+      toast.error('Showing offline cached data.');
+    }
+  };
+
+  const syncInsert = async (table: string, row: Record<string, any>) => {
+    if (!supabase || !isAuthenticated) return;
+    try {
+      const { error } = await supabase.from(table).insert(row);
+      if (error) throw error;
+    } catch (err) {
+      console.error(`Supabase insert into "${table}" failed:`, err);
+      enqueueSyncOperation(table, 'insert', row);
+    }
+  };
+
+  const syncUpdate = async (table: string, id: string, updates: Record<string, any>) => {
+    if (!supabase || !isAuthenticated) return;
+    try {
+      const { error } = await supabase.from(table).update(updates).eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      console.error(`Supabase update on "${table}" failed:`, err);
+      enqueueSyncOperation(table, 'update', { id, ...updates });
+    }
+  };
+
+  const syncDelete = async (table: string, id: string) => {
+    if (!supabase || !isAuthenticated) return;
+    try {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      console.error(`Supabase delete from "${table}" failed:`, err);
+      enqueueSyncOperation(table, 'delete', { id });
+    }
+  };
+
+  const syncSubtasksForTask = async (taskId: string, subtasks: Subtask[] | undefined) => {
+    if (!supabase || !isAuthenticated || subtasks === undefined) return;
+    try {
+      await supabase.from('task_subtasks').delete().eq('task_id', taskId);
+      if (subtasks.length > 0) {
+        const rows = subtasks.map((s, idx) => ({
+          ...s,
+          task_id: taskId,
+          user_id: effectiveUserId,
+          sort_order: s.sort_order ?? idx,
+        }));
+        await supabase.from('task_subtasks').insert(rows);
+      }
+    } catch (err) {
+      console.error('Failed to sync subtasks:', err);
+    }
+  };
+
   const initSeedData = () => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const today = new Date();
@@ -172,17 +374,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
-      {
-        id: 'proj-3',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'Personal & Health',
-        description: 'Fitness routines & daily habits',
-        color: '#10B981',
-        icon: 'Heart',
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
     ];
 
     const seedTasks: Task[] = [
@@ -190,18 +381,13 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         id: 'task-1',
         user_id: DEFAULT_PROFILE.id,
         project_id: 'proj-1',
-        title: 'Database Systems assignment submission',
-        description: 'Complete SQL query optimization chapter and submit PDF.',
+        title: 'Review Lecture Notes',
         priority: 'high',
-        status: 'scheduled',
+        status: 'todo',
         due_date: todayStr,
-        due_time: '12:00',
-        estimated_duration: 90,
+        estimated_duration: 45,
         actual_duration: 0,
-        subtasks: [
-          { id: 'sub-1', task_id: 'task-1', user_id: DEFAULT_PROFILE.id, title: 'Write queries for problem 4', completed: true, sort_order: 1, created_at: new Date().toISOString() },
-          { id: 'sub-2', task_id: 'task-1', user_id: DEFAULT_PROFILE.id, title: 'Review explain plan results', completed: false, sort_order: 2, created_at: new Date().toISOString() },
-        ],
+        recurrence_rule: 'weekdays',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -209,141 +395,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         id: 'task-2',
         user_id: DEFAULT_PROFILE.id,
         project_id: 'proj-2',
-        title: 'Implement Stripe webhook handler in InvoiceFlow',
-        description: 'Verify checkout.session.completed event and update subscription table.',
+        title: 'Implement Stripe Checkout webhook',
         priority: 'urgent',
-        status: 'scheduled',
-        due_date: todayStr,
-        due_time: '16:30',
-        estimated_duration: 90,
-        actual_duration: 45,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'task-3',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-1',
-        title: 'Python Lab Assignment 3',
-        description: 'Write binary search tree and tree traversal functions.',
-        priority: 'medium',
         status: 'todo',
-        due_date: format(addDays(today, 1), 'yyyy-MM-dd'),
-        estimated_duration: 60,
-        actual_duration: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'task-4',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-3',
-        title: 'Evening gym leg workout',
-        description: 'Squats, lunges, and calf raises.',
-        priority: 'medium',
-        status: 'scheduled',
         due_date: todayStr,
-        due_time: '18:00',
         estimated_duration: 60,
         actual_duration: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'task-5',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-2',
-        title: 'Design pricing cards responsive layout',
-        description: 'Support monthly and annual billing toggles with discount tags.',
-        priority: 'low',
-        status: 'inbox',
-        due_date: format(addDays(today, 3), 'yyyy-MM-dd'),
-        estimated_duration: 45,
-        actual_duration: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    // Helper to format ISO time for today
-    const makeTodayIso = (hours: number, minutes: number) => {
-      const d = new Date(today);
-      d.setHours(hours, minutes, 0, 0);
-      return d.toISOString();
-    };
-
-    const seedEvents: CalendarEvent[] = [
-      {
-        id: 'event-1',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-1',
-        title: 'Database Systems Lecture',
-        start_time: makeTodayIso(10, 30),
-        end_time: makeTodayIso(12, 0),
-        is_all_day: false,
-        color: '#3B82F6',
-        category: 'class',
-        location: 'Hall B / Zoom',
-        is_completed: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'event-2',
-        user_id: DEFAULT_PROFILE.id,
-        title: 'Lunch & Break',
-        start_time: makeTodayIso(12, 30),
-        end_time: makeTodayIso(13, 30),
-        is_all_day: false,
-        color: '#F59E0B',
-        category: 'break',
-        is_completed: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'event-3',
-        user_id: DEFAULT_PROFILE.id,
-        task_id: 'task-1',
-        project_id: 'proj-1',
-        title: 'Focus Block: Database Assignment',
-        start_time: makeTodayIso(14, 0),
-        end_time: makeTodayIso(15, 30),
-        is_all_day: false,
-        color: '#6366F1',
-        category: 'task_block',
-        is_completed: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'event-4',
-        user_id: DEFAULT_PROFILE.id,
-        task_id: 'task-2',
-        project_id: 'proj-2',
-        title: 'Deep Work: InvoiceFlow Webhooks',
-        start_time: makeTodayIso(16, 0),
-        end_time: makeTodayIso(17, 30),
-        is_all_day: false,
-        color: '#8B5CF6',
-        category: 'focus',
-        is_completed: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'event-5',
-        user_id: DEFAULT_PROFILE.id,
-        task_id: 'task-4',
-        project_id: 'proj-3',
-        title: 'Gym — Strength Training',
-        start_time: makeTodayIso(18, 0),
-        end_time: makeTodayIso(19, 0),
-        is_all_day: false,
-        color: '#10B981',
-        category: 'routine',
-        location: 'Equinox Gym',
-        is_completed: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -353,274 +410,39 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       {
         id: 'habit-1',
         user_id: DEFAULT_PROFILE.id,
-        name: 'Morning Hydration & Sunlight',
-        description: 'Drink 500ml water and 10 mins outdoor sunlight',
+        name: 'Morning Hydration',
         frequency: 'daily',
         target_days: 7,
-        color: '#38BDF8',
-        icon: 'Sun',
+        color: '#3B82F6',
+        icon: 'GlassWater',
         is_active: true,
+        reminder_time: '08:30',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
       {
         id: 'habit-2',
         user_id: DEFAULT_PROFILE.id,
-        name: 'Read 20 pages',
-        description: 'System design and engineering books',
-        frequency: 'daily',
-        target_days: 7,
-        color: '#818CF8',
-        icon: 'BookOpen',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'habit-3',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'Daily 45m Exercise',
-        description: 'Strength training or cardio',
+        name: 'Daily Coding Session',
         frequency: 'weekdays',
         target_days: 5,
-        color: '#34D399',
-        icon: 'Dumbbell',
+        color: '#10B981',
+        icon: 'Code',
         is_active: true,
+        reminder_time: '10:00',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'habit-4',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'Evening Shutdown & Review',
-        description: 'Clear desk, review tomorrow schedule, 10:30 PM bed',
-        frequency: 'daily',
-        target_days: 7,
-        color: '#F472B6',
-        icon: 'Moon',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const seedHabitLogs: HabitLog[] = [
-      { id: 'log-1', habit_id: 'habit-1', user_id: DEFAULT_PROFILE.id, date: todayStr, completed: true, created_at: new Date().toISOString() },
-      { id: 'log-2', habit_id: 'habit-1', user_id: DEFAULT_PROFILE.id, date: format(subDays(today, 1), 'yyyy-MM-dd'), completed: true, created_at: new Date().toISOString() },
-      { id: 'log-3', habit_id: 'habit-1', user_id: DEFAULT_PROFILE.id, date: format(subDays(today, 2), 'yyyy-MM-dd'), completed: true, created_at: new Date().toISOString() },
-      { id: 'log-4', habit_id: 'habit-2', user_id: DEFAULT_PROFILE.id, date: format(subDays(today, 1), 'yyyy-MM-dd'), completed: true, created_at: new Date().toISOString() },
-    ];
-
-    const seedNotes: Note[] = [
-      {
-        id: 'note-1',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-2',
-        title: 'InvoiceFlow Architecture Notes',
-        content: `### Architecture Plan
-- Next.js App Router with Server Actions
-- Supabase Auth + Row-Level Security
-- Stripe webhook signature verification on edge
-- PDF generator using standard serverless canvas`,
-        is_pinned: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'note-2',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-1',
-        title: 'DB Indexing Quick Cheatsheet',
-        content: `B-tree indexes are optimal for equality and range queries. Always index foreign keys and composite filters (user_id, status, start_time).`,
-        is_pinned: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const seedFocusSessions: FocusSession[] = [
-      {
-        id: 'focus-1',
-        user_id: DEFAULT_PROFILE.id,
-        task_id: 'task-2',
-        start_time: makeTodayIso(9, 0),
-        end_time: makeTodayIso(9, 45),
-        duration_minutes: 45,
-        status: 'completed',
-        notes: 'Deep focus on webhook signature verification tests.',
-        created_at: new Date().toISOString(),
       },
     ];
 
     setProjects(seedProjects);
     setTasks(seedTasks);
-    setEvents(seedEvents);
     setHabits(seedHabits);
-    setHabitLogs(seedHabitLogs);
-    setNotes(seedNotes);
-    setFocusSessions(seedFocusSessions);
-
-    // Save to localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}projects`, JSON.stringify(seedProjects));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}tasks`, JSON.stringify(seedTasks));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}events`, JSON.stringify(seedEvents));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}habits`, JSON.stringify(seedHabits));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}habitLogs`, JSON.stringify(seedHabitLogs));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}notes`, JSON.stringify(seedNotes));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}focusSessions`, JSON.stringify(seedFocusSessions));
-      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}profile`, JSON.stringify(DEFAULT_PROFILE));
-    }
+    saveToLocal('projects', seedProjects);
+    saveToLocal('tasks', seedTasks);
+    saveToLocal('habits', seedHabits);
   };
 
-  // Save changes to localStorage (acts as the offline cache/fallback for every mode)
-  const saveToLocal = (key: string, data: any) => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${key}`, JSON.stringify(data));
-      } catch (err) {
-        console.error('LocalStorage write failed:', err);
-      }
-    }
-  };
-
-  // --------------------------------------------------------------------------
-  // SUPABASE SYNC LAYER
-  // --------------------------------------------------------------------------
-  // Pulls every table for the signed-in user and replaces local state + cache.
-  const fetchAllFromSupabase = async (uid: string) => {
-    if (!supabase) return;
-    try {
-      const [
-        profileRes,
-        projectsRes,
-        tasksRes,
-        subtasksRes,
-        eventsRes,
-        habitsRes,
-        habitLogsRes,
-        notesRes,
-        focusRes,
-        reviewsRes,
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
-        supabase.from('projects').select('*').eq('user_id', uid).order('created_at', { ascending: true }),
-        supabase.from('tasks').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-        supabase.from('task_subtasks').select('*').eq('user_id', uid).order('sort_order', { ascending: true }),
-        supabase.from('events').select('*').eq('user_id', uid).order('start_time', { ascending: true }),
-        supabase.from('habits').select('*').eq('user_id', uid).order('created_at', { ascending: true }),
-        supabase.from('habit_logs').select('*').eq('user_id', uid),
-        supabase.from('notes').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-        supabase.from('focus_sessions').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-        supabase.from('daily_reviews').select('*').eq('user_id', uid),
-      ]);
-
-      const subtasksByTask = new Map<string, Subtask[]>();
-      ((subtasksRes.data as Subtask[]) || []).forEach((s) => {
-        const list = subtasksByTask.get(s.task_id) || [];
-        list.push(s);
-        subtasksByTask.set(s.task_id, list);
-      });
-
-      const fetchedTasks = ((tasksRes.data as Task[]) || []).map((t) => ({
-        ...t,
-        subtasks: subtasksByTask.get(t.id) || [],
-      }));
-      const fetchedProjects = (projectsRes.data as Project[]) || [];
-      const fetchedEvents = (eventsRes.data as CalendarEvent[]) || [];
-      const fetchedHabits = (habitsRes.data as Habit[]) || [];
-      const fetchedHabitLogs = (habitLogsRes.data as HabitLog[]) || [];
-      const fetchedNotes = (notesRes.data as Note[]) || [];
-      const fetchedFocus = (focusRes.data as FocusSession[]) || [];
-      const fetchedReviews = (reviewsRes.data as DailyReview[]) || [];
-
-      if (profileRes.data) setProfile(profileRes.data as UserProfile);
-      setProjects(fetchedProjects);
-      setTasks(fetchedTasks);
-      setEvents(fetchedEvents);
-      setHabits(fetchedHabits);
-      setHabitLogs(fetchedHabitLogs);
-      setNotes(fetchedNotes);
-      setFocusSessions(fetchedFocus);
-      setDailyReviews(fetchedReviews);
-
-      // Cache cloud data locally so it's available instantly (and offline) next load
-      if (profileRes.data) saveToLocal('profile', profileRes.data);
-      saveToLocal('projects', fetchedProjects);
-      saveToLocal('tasks', fetchedTasks);
-      saveToLocal('events', fetchedEvents);
-      saveToLocal('habits', fetchedHabits);
-      saveToLocal('habitLogs', fetchedHabitLogs);
-      saveToLocal('notes', fetchedNotes);
-      saveToLocal('focusSessions', fetchedFocus);
-      saveToLocal('dailyReviews', fetchedReviews);
-    } catch (err) {
-      console.error('Failed to fetch data from Supabase:', err);
-      toast.error('Failed to load your data from the cloud. Showing cached data instead.');
-    }
-  };
-
-  // Fire-and-forget write helpers. Local state/localStorage is already updated
-  // optimistically by the caller before these run, so a failure here just means
-  // "saved locally, not yet synced" rather than a lost write.
-  const syncInsert = async (table: string, row: Record<string, any>) => {
-    if (!supabase || !isAuthenticated) return;
-    try {
-      const { error } = await supabase.from(table).insert(row);
-      if (error) throw error;
-    } catch (err) {
-      console.error(`Supabase insert into "${table}" failed:`, err);
-      toast.error("Saved locally, but couldn't sync to the cloud.");
-    }
-  };
-
-  const syncUpdate = async (table: string, id: string, updates: Record<string, any>) => {
-    if (!supabase || !isAuthenticated) return;
-    try {
-      const { error } = await supabase.from(table).update(updates).eq('id', id);
-      if (error) throw error;
-    } catch (err) {
-      console.error(`Supabase update on "${table}" failed:`, err);
-      toast.error("Saved locally, but couldn't sync your changes to the cloud.");
-    }
-  };
-
-  const syncDelete = async (table: string, id: string) => {
-    if (!supabase || !isAuthenticated) return;
-    try {
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) throw error;
-    } catch (err) {
-      console.error(`Supabase delete from "${table}" failed:`, err);
-      toast.error("Deleted locally, but couldn't sync the deletion to the cloud.");
-    }
-  };
-
-  // Subtasks live in their own table — full-replace on every task save is simple and safe for small lists.
-  const syncSubtasksForTask = async (taskId: string, subtasks: Subtask[] | undefined) => {
-    if (!supabase || !isAuthenticated || subtasks === undefined) return;
-    try {
-      const { error: deleteError } = await supabase.from('task_subtasks').delete().eq('task_id', taskId);
-      if (deleteError) throw deleteError;
-      if (subtasks.length > 0) {
-        const rows = subtasks.map((s, idx) => ({
-          id: s.id,
-          task_id: taskId,
-          user_id: effectiveUserId,
-          title: s.title,
-          completed: s.completed,
-          sort_order: s.sort_order ?? idx,
-        }));
-        const { error: insertError } = await supabase.from('task_subtasks').insert(rows);
-        if (insertError) throw insertError;
-      }
-    } catch (err) {
-      console.error('Failed to sync subtasks:', err);
-      toast.error("Couldn't sync subtasks to the cloud.");
-    }
-  };
-
-  // Load on initial mount: local cache first (instant UI), then cloud data if signed in.
   useEffect(() => {
     let isMounted = true;
 
@@ -635,6 +457,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
           const savedNotes = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}notes`);
           const savedFocus = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}focusSessions`);
           const savedReviews = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}dailyReviews`);
+          const savedRecurringCompletions = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}recurringCompletions`);
+          const savedQueue = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}syncQueue`);
           const savedProfile = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}profile`);
 
           if (savedTasks && savedEvents) {
@@ -646,6 +470,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
             if (savedNotes) setNotes(JSON.parse(savedNotes));
             if (savedFocus) setFocusSessions(JSON.parse(savedFocus));
             if (savedReviews) setDailyReviews(JSON.parse(savedReviews));
+            if (savedRecurringCompletions) setRecurringCompletions(JSON.parse(savedRecurringCompletions));
+            if (savedQueue) setPendingSyncQueue(JSON.parse(savedQueue));
             if (savedProfile) setProfile(JSON.parse(savedProfile));
           } else {
             initSeedData();
@@ -663,9 +489,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       if (supabase) {
         setIsSupabaseConnected(true);
         try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
+          const { data: { user } } = await supabase.auth.getUser();
           if (isMounted && user) {
             setUserId(user.id);
             setIsAuthenticated(true);
@@ -675,7 +499,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
           console.error('Error checking Supabase auth session:', err);
         }
       }
-
       if (isMounted) setIsLoading(false);
     };
 
@@ -687,9 +510,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user) {
           setUserId(session.user.id);
           setIsAuthenticated(true);
-          setIsLoading(true);
           await fetchAllFromSupabase(session.user.id);
-          setIsLoading(false);
         } else if (event === 'SIGNED_OUT') {
           setUserId(null);
           setIsAuthenticated(false);
@@ -702,8 +523,11 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       authSubscription?.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
+
+  useEffect(() => {
+    scheduleSessionReminders(events, habits);
+  }, [events, habits]);
 
   const signOut = async () => {
     if (!supabase) return;
@@ -713,9 +537,85 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     toast.success('Signed out');
   };
 
-  // --------------------------------------------------------------------------
-  // TASK ACTIONS
-  // --------------------------------------------------------------------------
+  const isRuleActiveOnDate = (rule: RecurrenceRule, baseDateStr: string | null | undefined, targetDateStr: string): boolean => {
+    if (!rule) return false;
+    const target = parseISO(targetDateStr);
+    const base = baseDateStr ? parseISO(baseDateStr) : target;
+    if (target < base) return false;
+    if (rule === 'daily') return true;
+    if (rule === 'weekdays') return !isWeekend(target);
+    if (rule === 'weekly') return getDay(target) === getDay(base);
+    if (rule === 'monthly') return getDate(target) === getDate(base);
+    return false;
+  };
+
+  const getExpandedTasksForDate = (dateStr: string): Task[] => {
+    const result: Task[] = [];
+    tasks.forEach((task) => {
+      if (!task.recurrence_rule) {
+        if (task.due_date === dateStr || (!task.due_date && dateStr === format(new Date(), 'yyyy-MM-dd') && task.status !== 'completed')) {
+          result.push(task);
+        }
+      } else {
+        const baseDate = task.due_date || task.created_at.split('T')[0];
+        if (isRuleActiveOnDate(task.recurrence_rule, baseDate, dateStr)) {
+          const isCompleted = recurringCompletions.some(
+            (rc) => rc.item_id === task.id && rc.date === dateStr && rc.item_type === 'task' && rc.completed
+          );
+          result.push({
+            ...task,
+            id: `${task.id}_${dateStr}`,
+            is_recurring_instance: true,
+            occurrence_date: dateStr,
+            status: isCompleted ? 'completed' : 'todo',
+            completed_at: isCompleted ? dateStr : null,
+          });
+        }
+      }
+    });
+    return result;
+  };
+
+  const getExpandedEventsForRange = (startDate: Date, endDate: Date): CalendarEvent[] => {
+    const result: CalendarEvent[] = [];
+    const days: string[] = [];
+    let curr = new Date(startDate);
+    while (curr <= endDate) {
+      days.push(format(curr, 'yyyy-MM-dd'));
+      curr = addDays(curr, 1);
+    }
+
+    events.forEach((event) => {
+      if (!event.recurrence_rule) {
+        try {
+          const eventStart = parseISO(event.start_time);
+          if (eventStart >= startDate && eventStart <= endDate) result.push(event);
+        } catch {}
+      } else {
+        const baseDateStr = format(parseISO(event.start_time), 'yyyy-MM-dd');
+        const startTimeStr = event.start_time.split('T')[1] || '09:00:00';
+        const endTimeStr = event.end_time.split('T')[1] || '10:00:00';
+        days.forEach((dayStr) => {
+          if (isRuleActiveOnDate(event.recurrence_rule || null, baseDateStr, dayStr)) {
+            const isCompleted = recurringCompletions.some(
+              (rc) => rc.item_id === event.id && rc.date === dayStr && rc.item_type === 'event' && rc.completed
+            );
+            result.push({
+              ...event,
+              id: `${event.id}_${dayStr}`,
+              start_time: `${dayStr}T${startTimeStr}`,
+              end_time: `${dayStr}T${endTimeStr}`,
+              is_recurring_instance: true,
+              occurrence_date: dayStr,
+              is_completed: isCompleted,
+            });
+          }
+        });
+      }
+    });
+    return result;
+  };
+
   const addTask = (taskData: Partial<Task> & { title: string }): Task => {
     const newTask: Task = {
       id: generateId(),
@@ -724,13 +624,14 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       description: taskData.description || '',
       priority: taskData.priority || 'medium',
       status: taskData.status || 'todo',
-      due_date: taskData.due_date || format(new Date(), 'yyyy-MM-dd'),
+      due_date: taskData.due_date || null,
       due_time: taskData.due_time || null,
       estimated_duration: taskData.estimated_duration || 30,
       actual_duration: 0,
-      project_id: taskData.project_id || null,
-      subtasks: taskData.subtasks || [],
+      recurrence_rule: taskData.recurrence_rule || null,
       notes: taskData.notes || '',
+      subtasks: taskData.subtasks || [],
+      tags: taskData.tags || [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -741,168 +642,143 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
 
-    const { subtasks, tags, project, ...dbTask } = newTask;
+    const { subtasks, tags, project, is_recurring_instance, occurrence_date, ...dbTask } = newTask;
     syncInsert('tasks', dbTask);
-    if (subtasks && subtasks.length > 0) {
-      syncSubtasksForTask(newTask.id, subtasks);
-    }
+    if (subtasks && subtasks.length > 0) syncSubtasksForTask(newTask.id, subtasks);
 
     return newTask;
   };
 
   const updateTask = (id: string, updates: Partial<Task>) => {
+    const baseId = id.includes('_') ? id.split('_')[0] : id;
     setTasks((prev) => {
-      const updated = prev.map((t) => (t.id === id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t));
+      const updated = prev.map((t) => (t.id === baseId ? { ...t, ...updates, updated_at: new Date().toISOString() } : t));
       saveToLocal('tasks', updated);
       return updated;
     });
 
-    const { subtasks, tags, project, ...dbUpdates } = updates;
-    if (Object.keys(dbUpdates).length > 0) {
-      syncUpdate('tasks', id, { ...dbUpdates, updated_at: new Date().toISOString() });
-    }
-    if (subtasks !== undefined) {
-      syncSubtasksForTask(id, subtasks);
-    }
+    const { subtasks, tags, project, is_recurring_instance, occurrence_date, ...dbUpdates } = updates;
+    if (Object.keys(dbUpdates).length > 0) syncUpdate('tasks', baseId, { ...dbUpdates, updated_at: new Date().toISOString() });
+    if (subtasks !== undefined) syncSubtasksForTask(baseId, subtasks);
   };
 
   const deleteTask = (id: string) => {
+    const baseId = id.includes('_') ? id.split('_')[0] : id;
     setTasks((prev) => {
-      const updated = prev.filter((t) => t.id !== id);
+      const updated = prev.filter((t) => t.id !== baseId);
       saveToLocal('tasks', updated);
       return updated;
     });
-    // Remove linked event blocks if any
     setEvents((prev) => {
-      const updated = prev.filter((e) => e.task_id !== id);
+      const updated = prev.filter((e) => e.task_id !== baseId);
       saveToLocal('events', updated);
       return updated;
     });
-
     if (supabase && isAuthenticated) {
       (async () => {
         try {
-          const { error: eventsError } = await supabase.from('events').delete().eq('task_id', id);
-          if (eventsError) throw eventsError;
-          const { error: taskError } = await supabase.from('tasks').delete().eq('id', id);
-          if (taskError) throw taskError;
+          await supabase.from('events').delete().eq('task_id', baseId);
+          await supabase.from('tasks').delete().eq('id', baseId);
         } catch (err) {
-          console.error('Failed to delete task from Supabase:', err);
-          toast.error("Deleted locally, but couldn't sync the deletion to the cloud.");
+          enqueueSyncOperation('tasks', 'delete', { id: baseId });
         }
       })();
     }
   };
 
-  const toggleTaskCompletion = (id: string) => {
-    const task = tasks.find((t) => t.id === id);
+  const toggleTaskCompletion = (id: string, occurrenceDate?: string) => {
+    const isVirtual = id.includes('_');
+    const baseId = isVirtual ? id.split('_')[0] : id;
+    const task = tasks.find((t) => t.id === baseId);
     if (!task) return;
+
+    const targetDate = occurrenceDate || (isVirtual ? id.split('_')[1] : task.due_date) || format(new Date(), 'yyyy-MM-dd');
+
+    if (task.recurrence_rule) {
+      const existing = recurringCompletions.find((rc) => rc.item_id === baseId && rc.date === targetDate && rc.item_type === 'task');
+      setRecurringCompletions((prev) => {
+        let updated: RecurringCompletion[];
+        if (existing) updated = prev.filter((rc) => rc.id !== existing.id);
+        else updated = [...prev, { id: generateId(), user_id: effectiveUserId, item_id: baseId, date: targetDate, item_type: 'task', completed: true, completed_at: new Date().toISOString() }];
+        saveToLocal('recurringCompletions', updated);
+        return updated;
+      });
+      return;
+    }
 
     const isDone = task.status === 'completed';
     const newStatus: TaskStatus = isDone ? 'todo' : 'completed';
     const completedAt = isDone ? null : new Date().toISOString();
-
     setTasks((prev) => {
-      const updated = prev.map((t) =>
-        t.id === id ? { ...t, status: newStatus, completed_at: completedAt, updated_at: new Date().toISOString() } : t
-      );
+      const updated = prev.map((t) => (t.id === baseId ? { ...t, status: newStatus, completed_at: completedAt, updated_at: new Date().toISOString() } : t));
       saveToLocal('tasks', updated);
       return updated;
     });
-
-    // Also toggle matching event completion if linked
     setEvents((prev) => {
-      const updated = prev.map((e) => {
-        if (e.task_id === id) {
-          return { ...e, is_completed: !e.is_completed, updated_at: new Date().toISOString() };
-        }
-        return e;
-      });
+      const updated = prev.map((e) => (e.task_id === baseId ? { ...e, is_completed: !isDone } : e));
       saveToLocal('events', updated);
       return updated;
     });
-
-    syncUpdate('tasks', id, { status: newStatus, completed_at: completedAt, updated_at: new Date().toISOString() });
-
-    const linkedEvent = events.find((e) => e.task_id === id);
-    if (linkedEvent) {
-      syncUpdate('events', linkedEvent.id, { is_completed: !linkedEvent.is_completed, updated_at: new Date().toISOString() });
-    }
+    syncUpdate('tasks', baseId, { status: newStatus, completed_at: completedAt, updated_at: new Date().toISOString() });
   };
 
-  // --------------------------------------------------------------------------
-  // EVENT & TIME-BLOCKING ACTIONS
-  // --------------------------------------------------------------------------
-  const addEvent = (
-    eventData: Partial<CalendarEvent> & { title: string; start_time: string; end_time: string }
-  ): CalendarEvent => {
+  const addEvent = (eventData: Partial<CalendarEvent> & { title: string; start_time: string; end_time: string }): CalendarEvent => {
     const newEvent: CalendarEvent = {
       id: generateId(),
       user_id: effectiveUserId,
+      task_id: eventData.task_id || null,
+      project_id: eventData.project_id || null,
       title: eventData.title,
       description: eventData.description || '',
       start_time: eventData.start_time,
       end_time: eventData.end_time,
       is_all_day: eventData.is_all_day || false,
-      color: eventData.color || '#6366F1',
+      color: eventData.color || '#3B82F6',
       category: eventData.category || 'task_block',
       location: eventData.location || '',
-      task_id: eventData.task_id || null,
-      project_id: eventData.project_id || null,
       is_completed: false,
+      recurrence_rule: eventData.recurrence_rule || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
     setEvents((prev) => {
-      const updated = [...prev, newEvent].sort(
-        (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-      );
+      const updated = [...prev, newEvent];
       saveToLocal('events', updated);
       return updated;
     });
-
-    const { task, project, ...dbEvent } = newEvent;
+    const { task, project, is_recurring_instance, occurrence_date, ...dbEvent } = newEvent;
     syncInsert('events', dbEvent);
-
-    // If linked to a task, update task status to scheduled
-    if (eventData.task_id) {
-      updateTask(eventData.task_id, { status: 'scheduled' });
-    }
-
     return newEvent;
   };
 
   const updateEvent = (id: string, updates: Partial<CalendarEvent>) => {
+    const baseId = id.includes('_') ? id.split('_')[0] : id;
     setEvents((prev) => {
-      const updated = prev.map((e) => (e.id === id ? { ...e, ...updates, updated_at: new Date().toISOString() } : e));
+      const updated = prev.map((e) => (e.id === baseId ? { ...e, ...updates, updated_at: new Date().toISOString() } : e));
       saveToLocal('events', updated);
       return updated;
     });
-
-    const { task, project, ...dbUpdates } = updates;
-    syncUpdate('events', id, { ...dbUpdates, updated_at: new Date().toISOString() });
+    const { task, project, is_recurring_instance, occurrence_date, ...dbUpdates } = updates;
+    syncUpdate('events', baseId, { ...dbUpdates, updated_at: new Date().toISOString() });
   };
 
   const deleteEvent = (id: string) => {
+    const baseId = id.includes('_') ? id.split('_')[0] : id;
     setEvents((prev) => {
-      const updated = prev.filter((e) => e.id !== id);
+      const updated = prev.filter((e) => e.id !== baseId);
       saveToLocal('events', updated);
       return updated;
     });
-    syncDelete('events', id);
+    syncDelete('events', baseId);
   };
 
   const scheduleTaskAsEvent = (taskId: string, startTime: string, durationMinutes?: number): CalendarEvent | null => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return null;
-
     const duration = durationMinutes || task.estimated_duration || 45;
     const start = new Date(startTime);
     const end = new Date(start.getTime() + duration * 60000);
-
     const targetProject = projects.find((p) => p.id === task.project_id);
-
     const event = addEvent({
       title: task.title,
       description: task.description,
@@ -910,26 +786,32 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       end_time: end.toISOString(),
       task_id: task.id,
       project_id: task.project_id,
-      color: targetProject?.color || '#6366F1',
+      color: targetProject?.color || '#0071e3',
       category: 'task_block',
     });
-
-    updateTask(taskId, {
-      status: 'scheduled',
-      due_date: format(start, 'yyyy-MM-dd'),
-      due_time: format(start, 'HH:mm'),
-    });
-
+    updateTask(taskId, { status: 'scheduled', due_date: format(start, 'yyyy-MM-dd'), due_time: format(start, 'HH:mm') });
     return event;
   };
 
-  const toggleEventCompletion = (id: string) => {
-    const event = events.find((e) => e.id === id);
+  const toggleEventCompletion = (id: string, occurrenceDate?: string) => {
+    const isVirtual = id.includes('_');
+    const baseId = isVirtual ? id.split('_')[0] : id;
+    const event = events.find((e) => e.id === baseId);
     if (!event) return;
-
+    const targetDate = occurrenceDate || (isVirtual ? id.split('_')[1] : format(parseISO(event.start_time), 'yyyy-MM-dd'));
+    if (event.recurrence_rule) {
+      const existing = recurringCompletions.find((rc) => rc.item_id === baseId && rc.date === targetDate && rc.item_type === 'event');
+      setRecurringCompletions((prev) => {
+        let updated: RecurringCompletion[];
+        if (existing) updated = prev.filter((rc) => rc.id !== existing.id);
+        else updated = [...prev, { id: generateId(), user_id: effectiveUserId, item_id: baseId, date: targetDate, item_type: 'event', completed: true, completed_at: new Date().toISOString() }];
+        saveToLocal('recurringCompletions', updated);
+        return updated;
+      });
+      return;
+    }
     const nextCompleted = !event.is_completed;
-    updateEvent(id, { is_completed: nextCompleted });
-
+    updateEvent(baseId, { is_completed: nextCompleted });
     if (event.task_id) {
       updateTask(event.task_id, {
         status: nextCompleted ? 'completed' : 'todo',
@@ -938,31 +820,25 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // --------------------------------------------------------------------------
-  // PROJECT ACTIONS
-  // --------------------------------------------------------------------------
   const addProject = (projectData: Partial<Project> & { name: string }): Project => {
     const newProject: Project = {
       id: generateId(),
       user_id: effectiveUserId,
       name: projectData.name,
       description: projectData.description || '',
-      color: projectData.color || '#6366F1',
+      color: projectData.color || '#0071e3',
       icon: projectData.icon || 'Folder',
       status: 'active',
       deadline: projectData.deadline,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
     setProjects((prev) => {
       const updated = [...prev, newProject];
       saveToLocal('projects', updated);
       return updated;
     });
-
     syncInsert('projects', newProject);
-
     return newProject;
   };
 
@@ -984,9 +860,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     syncDelete('projects', id);
   };
 
-  // --------------------------------------------------------------------------
-  // HABIT ACTIONS
-  // --------------------------------------------------------------------------
   const addHabit = (habitData: Partial<Habit> & { name: string }): Habit => {
     const newHabit: Habit = {
       id: generateId(),
@@ -998,25 +871,32 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       color: habitData.color || '#10B981',
       icon: habitData.icon || 'CheckCircle',
       is_active: true,
+      reminder_time: habitData.reminder_time || '09:00',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
     setHabits((prev) => {
       const updated = [...prev, newHabit];
       saveToLocal('habits', updated);
       return updated;
     });
-
     const { logs, ...dbHabit } = newHabit;
     syncInsert('habits', dbHabit);
-
     return newHabit;
+  };
+
+  const updateHabit = (id: string, updates: Partial<Habit>) => {
+    setHabits((prev) => {
+      const updated = prev.map((h) => (h.id === id ? { ...h, ...updates, updated_at: new Date().toISOString() } : h));
+      saveToLocal('habits', updated);
+      return updated;
+    });
+    const { logs, ...dbUpdates } = updates;
+    syncUpdate('habits', id, { ...dbUpdates, updated_at: new Date().toISOString() });
   };
 
   const toggleHabitForDate = (habitId: string, date: string) => {
     const existing = habitLogs.find((log) => log.habit_id === habitId && log.date === date);
-
     if (existing) {
       setHabitLogs((prev) => {
         const updated = prev.filter((log) => log.id !== existing.id);
@@ -1048,7 +928,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       saveToLocal('habits', updated);
       return updated;
     });
-    // Clean up orphaned logs locally too (the DB cascades this automatically via FK)
     setHabitLogs((prev) => {
       const updated = prev.filter((l) => l.habit_id !== id);
       saveToLocal('habitLogs', updated);
@@ -1058,27 +937,55 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getHabitStreak = (habitId: string): number => {
-    let streak = 0;
+    const habit = habits.find((h) => h.id === habitId);
+    if (!habit) return 0;
     const today = new Date();
+    let streak = 0;
 
-    for (let i = 0; i < 60; i++) {
+    if (habit.frequency === 'weekdays') {
+      for (let i = 0; i < 90; i++) {
+        const checkDate = subDays(today, i);
+        const dateStr = format(checkDate, 'yyyy-MM-dd');
+        const isLogged = habitLogs.some((l) => l.habit_id === habitId && l.date === dateStr && l.completed);
+        if (isWeekend(checkDate)) {
+          if (isLogged) streak++;
+          continue;
+        }
+        if (isLogged) streak++;
+        else if (i === 0) continue;
+        else break;
+      }
+      return streak;
+    }
+
+    if (habit.frequency === 'weekly') {
+      const target = habit.target_days || 1;
+      for (let w = 0; w < 52; w++) {
+        const weekDate = subWeeks(today, w);
+        const start = startOfWeek(weekDate, { weekStartsOn: 1 });
+        const end = endOfWeek(weekDate, { weekStartsOn: 1 });
+        const countInWeek = habitLogs.filter((l) => {
+          if (l.habit_id !== habitId || !l.completed) return false;
+          const logDate = parseISO(l.date);
+          return logDate >= start && logDate <= end;
+        }).length;
+        if (countInWeek >= target) streak++;
+        else if (w === 0) continue;
+        else break;
+      }
+      return streak;
+    }
+
+    for (let i = 0; i < 90; i++) {
       const dateStr = format(subDays(today, i), 'yyyy-MM-dd');
       const isLogged = habitLogs.some((l) => l.habit_id === habitId && l.date === dateStr && l.completed);
-      if (isLogged) {
-        streak++;
-      } else if (i === 0) {
-        // If not completed today yet, check if yesterday was completed without breaking streak
-        continue;
-      } else {
-        break;
-      }
+      if (isLogged) streak++;
+      else if (i === 0) continue;
+      else break;
     }
     return streak;
   };
 
-  // --------------------------------------------------------------------------
-  // NOTE ACTIONS
-  // --------------------------------------------------------------------------
   const addNote = (noteData: Partial<Note> & { title: string; content: string }): Note => {
     const newNote: Note = {
       id: generateId(),
@@ -1091,16 +998,12 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
     setNotes((prev) => {
       const updated = [newNote, ...prev];
       saveToLocal('notes', updated);
       return updated;
     });
-
-    const { project, ...dbNote } = newNote;
-    syncInsert('notes', dbNote);
-
+    syncInsert('notes', newNote);
     return newNote;
   };
 
@@ -1110,9 +1013,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       saveToLocal('notes', updated);
       return updated;
     });
-
-    const { project, ...dbUpdates } = updates;
-    syncUpdate('notes', id, { ...dbUpdates, updated_at: new Date().toISOString() });
+    syncUpdate('notes', id, { ...updates, updated_at: new Date().toISOString() });
   };
 
   const deleteNote = (id: string) => {
@@ -1124,52 +1025,35 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     syncDelete('notes', id);
   };
 
-  // --------------------------------------------------------------------------
-  // FOCUS ACTIONS
-  // --------------------------------------------------------------------------
   const logFocusSession = (session: { taskId?: string | null; durationMinutes: number; notes?: string }) => {
     const newSession: FocusSession = {
       id: generateId(),
       user_id: effectiveUserId,
       task_id: session.taskId || null,
+      duration_minutes: session.durationMinutes,
       start_time: new Date(Date.now() - session.durationMinutes * 60000).toISOString(),
       end_time: new Date().toISOString(),
-      duration_minutes: session.durationMinutes,
       status: 'completed',
       notes: session.notes || '',
       created_at: new Date().toISOString(),
     };
-
     setFocusSessions((prev) => {
       const updated = [newSession, ...prev];
       saveToLocal('focusSessions', updated);
       return updated;
     });
-
-    const { task, ...dbSession } = newSession;
-    syncInsert('focus_sessions', dbSession);
-
-    // Update actual duration on task if linked
+    syncInsert('focus_sessions', newSession);
     if (session.taskId) {
       const task = tasks.find((t) => t.id === session.taskId);
-      if (task) {
-        updateTask(session.taskId, {
-          actual_duration: (task.actual_duration || 0) + session.durationMinutes,
-        });
-      }
+      if (task) updateTask(session.taskId, { actual_duration: (task.actual_duration || 0) + session.durationMinutes });
     }
   };
 
-  // --------------------------------------------------------------------------
-  // DAILY PLANNING & REPLANNING
-  // --------------------------------------------------------------------------
   const planMyDay = (targetDate?: string) => {
     const dateStr = targetDate || format(new Date(), 'yyyy-MM-dd');
     const dayTasks = tasks.filter(
       (t) => (t.due_date === dateStr || t.status === 'todo') && t.status !== 'completed' && t.status !== 'cancelled'
     );
-
-    // Existing events for today
     const dayEvents = events.filter((e) => {
       try {
         return isSameDay(parseISO(e.start_time), parseISO(dateStr));
@@ -1177,27 +1061,17 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     });
-
-    // Simple intelligent slot finder starting from 09:00 to 18:00
     let currentHour = 9;
     let currentMinute = 0;
-
     const baseDate = new Date(dateStr);
-
     dayTasks.slice(0, 4).forEach((task) => {
       const isAlreadyScheduled = dayEvents.some((e) => e.task_id === task.id);
       if (isAlreadyScheduled) return;
-
       const duration = task.estimated_duration || 45;
-
       const start = new Date(baseDate);
       start.setHours(currentHour, currentMinute, 0, 0);
-
       const end = new Date(start.getTime() + duration * 60000);
-
       scheduleTaskAsEvent(task.id, start.toISOString(), duration);
-
-      // Increment clock + 15 min buffer
       const nextTime = new Date(end.getTime() + 15 * 60000);
       currentHour = nextTime.getHours();
       currentMinute = nextTime.getMinutes();
@@ -1206,36 +1080,18 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
   const replanMyDay = (lostMinutes: number) => {
     const now = new Date();
-    const changedEvents: { id: string; start_time: string; end_time: string }[] = [];
-
     setEvents((prev) => {
       const updated = prev.map((e) => {
         const eventStart = new Date(e.start_time);
-        // Only shift future, non-completed, flexible task blocks
-        if (
-          isSameDay(eventStart, now) &&
-          eventStart > now &&
-          !e.is_completed &&
-          (e.category === 'task_block' || e.category === 'focus')
-        ) {
+        if (isSameDay(eventStart, now) && eventStart > now && !e.is_completed && (e.category === 'task_block' || e.category === 'focus')) {
           const newStart = new Date(eventStart.getTime() + lostMinutes * 60000);
           const newEnd = new Date(new Date(e.end_time).getTime() + lostMinutes * 60000);
-          changedEvents.push({ id: e.id, start_time: newStart.toISOString(), end_time: newEnd.toISOString() });
-          return {
-            ...e,
-            start_time: newStart.toISOString(),
-            end_time: newEnd.toISOString(),
-            updated_at: new Date().toISOString(),
-          };
+          return { ...e, start_time: newStart.toISOString(), end_time: newEnd.toISOString(), updated_at: new Date().toISOString() };
         }
         return e;
       });
       saveToLocal('events', updated);
       return updated;
-    });
-
-    changedEvents.forEach(({ id, start_time, end_time }) => {
-      syncUpdate('events', id, { start_time, end_time, updated_at: new Date().toISOString() });
     });
   };
 
@@ -1245,14 +1101,10 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
       saveToLocal('profile', updated);
       return updated;
     });
-    if (supabase && isAuthenticated) {
-      syncUpdate('profiles', effectiveUserId, { ...updates, updated_at: new Date().toISOString() });
-    }
+    if (supabase && isAuthenticated) syncUpdate('profiles', effectiveUserId, { ...updates, updated_at: new Date().toISOString() });
   };
 
-  const updateDailyIntention = (intention: string) => {
-    updateProfile({ daily_intention: intention });
-  };
+  const updateDailyIntention = (intention: string) => updateProfile({ daily_intention: intention });
 
   const saveDailyReview = (reviewData: Partial<DailyReview> & { date: string }) => {
     const existing = dailyReviews.find((r) => r.date === reviewData.date);
@@ -1281,13 +1133,51 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     if (supabase && isAuthenticated) {
       (async () => {
         try {
-          const { error } = await supabase.from('daily_reviews').upsert(newReview, { onConflict: 'user_id,date' });
-          if (error) throw error;
+          await supabase.from('daily_reviews').upsert(newReview, { onConflict: 'user_id,date' });
         } catch (err) {
-          console.error('Failed to sync daily review:', err);
-          toast.error("Couldn't sync your daily review to the cloud.");
+          enqueueSyncOperation('daily_reviews', 'upsert', newReview);
         }
       })();
+    }
+  };
+
+  const importData = (payload: any): boolean => {
+    try {
+      if (!payload || typeof payload !== 'object') return false;
+      if (Array.isArray(payload.projects)) {
+        setProjects(payload.projects);
+        saveToLocal('projects', payload.projects);
+        payload.projects.forEach((p: Project) => syncInsert('projects', p));
+      }
+      if (Array.isArray(payload.tasks)) {
+        setTasks(payload.tasks);
+        saveToLocal('tasks', payload.tasks);
+        payload.tasks.forEach((t: Task) => syncInsert('tasks', t));
+      }
+      if (Array.isArray(payload.events)) {
+        setEvents(payload.events);
+        saveToLocal('events', payload.events);
+        payload.events.forEach((e: CalendarEvent) => syncInsert('events', e));
+      }
+      if (Array.isArray(payload.habits)) {
+        setHabits(payload.habits);
+        saveToLocal('habits', payload.habits);
+        payload.habits.forEach((h: Habit) => syncInsert('habits', h));
+      }
+      if (Array.isArray(payload.notes)) {
+        setNotes(payload.notes);
+        saveToLocal('notes', payload.notes);
+        payload.notes.forEach((n: Note) => syncInsert('notes', n));
+      }
+      if (payload.profile && typeof payload.profile === 'object') {
+        setProfile((prev) => ({ ...prev, ...payload.profile }));
+        saveToLocal('profile', { ...profile, ...payload.profile });
+      }
+      toast.success('Planner data imported successfully');
+      return true;
+    } catch (err) {
+      toast.error('Invalid backup file format');
+      return false;
     }
   };
 
@@ -1296,7 +1186,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     setIsQuickAddOpen(true);
   };
 
-  // Hydrate runtime joins (task.project, event.task, event.project)
   const hydratedTasks = useMemo(() => {
     return tasks.map((t) => ({
       ...t,
@@ -1322,6 +1211,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     focusSessions,
     dailyReviews,
     profile,
+    recurringCompletions,
     isSupabaseConnected,
     isAuthenticated,
     isLoading,
@@ -1329,15 +1219,18 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     updateTask,
     deleteTask,
     toggleTaskCompletion,
+    getExpandedTasksForDate,
     addEvent,
     updateEvent,
     deleteEvent,
     scheduleTaskAsEvent,
     toggleEventCompletion,
+    getExpandedEventsForRange,
     addProject,
     updateProject,
     deleteProject,
     addHabit,
+    updateHabit,
     toggleHabitForDate,
     deleteHabit,
     getHabitStreak,
@@ -1350,6 +1243,7 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     updateDailyIntention,
     updateProfile,
     saveDailyReview,
+    importData,
     signOut,
     isQuickAddOpen,
     setIsQuickAddOpen,
@@ -1365,8 +1259,6 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
 
 export function usePlanner() {
   const context = useContext(PlannerContext);
-  if (!context) {
-    throw new Error('usePlanner must be used within a PlannerProvider');
-  }
+  if (!context) throw new Error('usePlanner must be used within a PlannerProvider');
   return context;
 }

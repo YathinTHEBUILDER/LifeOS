@@ -8,6 +8,8 @@ export type HabitFrequency = 'daily' | 'weekdays' | 'weekly';
 
 export type RecurrenceRule = 'daily' | 'weekdays' | 'weekly' | 'monthly' | null;
 
+export type RealtimeSyncStatus = 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+
 export interface RecurringCompletion {
   id: string;
   user_id: string;

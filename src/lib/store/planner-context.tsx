@@ -18,6 +18,7 @@ import {
   RecurrenceRule,
   RecurringCompletion,
   SyncQueueItem,
+  RealtimeSyncStatus,
 } from '@/types';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -51,6 +52,8 @@ interface PlannerContextType {
   isSupabaseConnected: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
+  realtimeStatus: RealtimeSyncStatus;
+  refreshData: () => Promise<void>;
 
   // Task Actions
   addTask: (task: Partial<Task> & { title: string }) => Task;
@@ -234,7 +237,9 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('online', handleOnline);
   }, [drainSyncQueue]);
 
-  const fetchAllFromSupabase = async (uid: string) => {
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeSyncStatus>('DISCONNECTED');
+
+  const fetchAllFromSupabase = useCallback(async (uid: string) => {
     if (!supabase) return;
     try {
       const [
@@ -273,30 +278,318 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
         subtasks: subtasksByTask.get(t.id) || [],
       }));
 
-      if (profileRes.data) setProfile(profileRes.data as UserProfile);
-      setProjects((projectsRes.data as Project[]) || []);
+      if (profileRes.data) {
+        setProfile(profileRes.data as UserProfile);
+        saveToLocal('profile', profileRes.data);
+      }
+      if (projectsRes.data) {
+        setProjects(projectsRes.data as Project[]);
+        saveToLocal('projects', projectsRes.data);
+      }
       setTasks(fetchedTasks);
-      setEvents((eventsRes.data as CalendarEvent[]) || []);
-      setHabits((habitsRes.data as Habit[]) || []);
-      setHabitLogs((habitLogsRes.data as HabitLog[]) || []);
-      setNotes((notesRes.data as Note[]) || []);
-      setFocusSessions((focusRes.data as FocusSession[]) || []);
-      setDailyReviews((reviewsRes.data as DailyReview[]) || []);
-
-      if (profileRes.data) saveToLocal('profile', profileRes.data);
-      saveToLocal('projects', projectsRes.data);
       saveToLocal('tasks', fetchedTasks);
-      saveToLocal('events', eventsRes.data);
-      saveToLocal('habits', habitsRes.data);
-      saveToLocal('habitLogs', habitLogsRes.data);
-      saveToLocal('notes', notesRes.data);
-      saveToLocal('focusSessions', focusRes.data);
-      saveToLocal('dailyReviews', reviewsRes.data);
+      if (eventsRes.data) {
+        setEvents(eventsRes.data as CalendarEvent[]);
+        saveToLocal('events', eventsRes.data);
+      }
+      if (habitsRes.data) {
+        setHabits(habitsRes.data as Habit[]);
+        saveToLocal('habits', habitsRes.data);
+      }
+      if (habitLogsRes.data) {
+        setHabitLogs(habitLogsRes.data as HabitLog[]);
+        saveToLocal('habitLogs', habitLogsRes.data);
+      }
+      if (notesRes.data) {
+        setNotes(notesRes.data as Note[]);
+        saveToLocal('notes', notesRes.data);
+      }
+      if (focusRes.data) {
+        setFocusSessions(focusRes.data as FocusSession[]);
+        saveToLocal('focusSessions', focusRes.data);
+      }
+      if (reviewsRes.data) {
+        setDailyReviews(reviewsRes.data as DailyReview[]);
+        saveToLocal('dailyReviews', reviewsRes.data);
+      }
     } catch (err) {
-      console.error('Failed to fetch data from Supabase:', err);
-      toast.error('Showing offline cached data.');
+      console.error('Failed to fetch authoritative data from Supabase:', err);
     }
-  };
+  }, [supabase]);
+
+  const fetchTasksDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const [tasksRes, subtasksRes] = await Promise.all([
+        supabase.from('tasks').select('*').eq('user_id', uid),
+        supabase.from('task_subtasks').select('*').eq('user_id', uid).order('sort_order', { ascending: true }),
+      ]);
+      if (tasksRes.data) {
+        const subtasksByTask = new Map<string, Subtask[]>();
+        ((subtasksRes.data as Subtask[]) || []).forEach((s) => {
+          const list = subtasksByTask.get(s.task_id) || [];
+          list.push(s);
+          subtasksByTask.set(s.task_id, list);
+        });
+        const fetchedTasks = (tasksRes.data as Task[]).map((t) => ({
+          ...t,
+          subtasks: subtasksByTask.get(t.id) || [],
+        }));
+        setTasks(fetchedTasks);
+        saveToLocal('tasks', fetchedTasks);
+      }
+    } catch (err) {
+      console.error('Realtime tasks fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchEventsDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('events').select('*').eq('user_id', uid);
+      if (data) {
+        setEvents(data as CalendarEvent[]);
+        saveToLocal('events', data);
+      }
+    } catch (err) {
+      console.error('Realtime events fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchHabitsDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('habits').select('*').eq('user_id', uid);
+      if (data) {
+        setHabits(data as Habit[]);
+        saveToLocal('habits', data);
+      }
+    } catch (err) {
+      console.error('Realtime habits fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchHabitLogsDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('habit_logs').select('*').eq('user_id', uid);
+      if (data) {
+        setHabitLogs(data as HabitLog[]);
+        saveToLocal('habitLogs', data);
+      }
+    } catch (err) {
+      console.error('Realtime habit_logs fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchProjectsDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('projects').select('*').eq('user_id', uid);
+      if (data) {
+        setProjects(data as Project[]);
+        saveToLocal('projects', data);
+      }
+    } catch (err) {
+      console.error('Realtime projects fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchNotesDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('notes').select('*').eq('user_id', uid);
+      if (data) {
+        setNotes(data as Note[]);
+        saveToLocal('notes', data);
+      }
+    } catch (err) {
+      console.error('Realtime notes fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchFocusDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('focus_sessions').select('*').eq('user_id', uid);
+      if (data) {
+        setFocusSessions(data as FocusSession[]);
+        saveToLocal('focusSessions', data);
+      }
+    } catch (err) {
+      console.error('Realtime focus fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchReviewsDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('daily_reviews').select('*').eq('user_id', uid);
+      if (data) {
+        setDailyReviews(data as DailyReview[]);
+        saveToLocal('dailyReviews', data);
+      }
+    } catch (err) {
+      console.error('Realtime daily_reviews fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const fetchProfileDomain = useCallback(async (uid: string) => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+      if (data) {
+        setProfile(data as UserProfile);
+        saveToLocal('profile', data);
+      }
+    } catch (err) {
+      console.error('Realtime profile fetch failed:', err);
+    }
+  }, [supabase]);
+
+  const refreshData = useCallback(async () => {
+    if (userId) {
+      await fetchAllFromSupabase(userId);
+    }
+  }, [userId, fetchAllFromSupabase]);
+
+  // Centralized Realtime Subscription for all LifeOS tables
+  useEffect(() => {
+    if (!supabase || !isAuthenticated || !userId) {
+      setRealtimeStatus('DISCONNECTED');
+      return;
+    }
+
+    setRealtimeStatus('CONNECTING');
+
+    const debounceTimers: Record<string, NodeJS.Timeout> = {};
+    const triggerDebounced = (domain: string, fn: () => void) => {
+      if (debounceTimers[domain]) clearTimeout(debounceTimers[domain]);
+      debounceTimers[domain] = setTimeout(fn, 50);
+    };
+
+    const channel = supabase
+      .channel(`planner-realtime-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('tasks', () => fetchTasksDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'task_subtasks', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('tasks', () => fetchTasksDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'task_tags' },
+        () => triggerDebounced('tasks', () => fetchTasksDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'events', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('events', () => fetchEventsDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('habits', () => fetchHabitsDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('habit_logs', () => fetchHabitLogsDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('projects', () => fetchProjectsDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notes', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('notes', () => fetchNotesDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'focus_sessions', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('focus', () => fetchFocusDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'daily_reviews', filter: `user_id=eq.${userId}` },
+        () => triggerDebounced('reviews', () => fetchReviewsDomain(userId))
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+        () => triggerDebounced('profile', () => fetchProfileDomain(userId))
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('CONNECTED');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.warn('Realtime channel error:', err);
+          setRealtimeStatus('ERROR');
+        } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
+          setRealtimeStatus('DISCONNECTED');
+        }
+      });
+
+    return () => {
+      Object.values(debounceTimers).forEach((t) => clearTimeout(t));
+      supabase.removeChannel(channel);
+    };
+  }, [
+    supabase,
+    isAuthenticated,
+    userId,
+    fetchTasksDomain,
+    fetchEventsDomain,
+    fetchHabitsDomain,
+    fetchHabitLogsDomain,
+    fetchProjectsDomain,
+    fetchNotesDomain,
+    fetchFocusDomain,
+    fetchReviewsDomain,
+    fetchProfileDomain,
+  ]);
+
+  // Visibility changes (iPhone PWA backgrounding / tab switching) and network reconnection recovery
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return;
+
+    let lastSyncTime = Date.now();
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastSyncTime > 1500) {
+          lastSyncTime = now;
+          fetchAllFromSupabase(userId);
+        }
+      }
+    };
+
+    const handleOnlineRecovery = () => {
+      drainSyncQueue();
+      fetchAllFromSupabase(userId);
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('online', handleOnlineRecovery);
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      }
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleOnlineRecovery);
+    };
+  }, [isAuthenticated, userId, drainSyncQueue, fetchAllFromSupabase]);
 
   const syncInsert = async (table: string, row: Record<string, any>) => {
     if (!supabase || !isAuthenticated) return;
@@ -1195,6 +1488,8 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
     isSupabaseConnected,
     isAuthenticated,
     isLoading,
+    realtimeStatus,
+    refreshData,
     addTask,
     updateTask,
     deleteTask,

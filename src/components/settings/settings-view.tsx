@@ -13,6 +13,7 @@ export function SettingsView() {
     updateProfile,
     isSupabaseConnected,
     isAuthenticated,
+    realtimeStatus,
     signOut,
     tasks,
     events,
@@ -215,13 +216,29 @@ export function SettingsView() {
               <span
                 className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
                   isAuthenticated
-                    ? 'bg-emerald-500/10 text-emerald-500'
+                    ? realtimeStatus === 'CONNECTED'
+                      ? 'bg-emerald-500/10 text-emerald-500'
+                      : realtimeStatus === 'CONNECTING'
+                      ? 'bg-amber-500/10 text-amber-500'
+                      : realtimeStatus === 'ERROR'
+                      ? 'bg-rose-500/10 text-rose-500'
+                      : 'bg-amber-500/10 text-amber-500'
                     : isSupabaseConnected
                     ? 'bg-amber-500/10 text-amber-500'
                     : 'bg-secondary text-muted-foreground'
                 }`}
               >
-                {isAuthenticated ? 'Synced' : isSupabaseConnected ? 'Signed Out' : 'Offline'}
+                {isAuthenticated
+                  ? realtimeStatus === 'CONNECTED'
+                    ? '● Live Sync'
+                    : realtimeStatus === 'CONNECTING'
+                    ? 'Connecting...'
+                    : realtimeStatus === 'ERROR'
+                    ? 'Sync Error'
+                    : 'Reconnecting...'
+                  : isSupabaseConnected
+                  ? 'Signed Out'
+                  : 'Offline'}
               </span>
 
               {isAuthenticated ? (

@@ -178,7 +178,7 @@ export function TaskManager() {
         {filteredTasks.length === 0 ? (
           <div className="py-16 text-center rounded-2xl bg-card border border-border/60 text-xs text-muted-foreground space-y-1">
             <p className="font-medium text-foreground">No tasks</p>
-            <p>Nothing here yet.</p>
+            <p className="text-muted-foreground text-[11px]">Add one when something comes up.</p>
           </div>
         ) : (
           filteredTasks.map((task) => {

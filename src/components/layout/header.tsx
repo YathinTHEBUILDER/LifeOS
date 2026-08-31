@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Moon, Sun, Sparkles, Cloud } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
 import { format } from 'date-fns';
+import { NotificationCenter } from '@/components/notifications/notification-center';
 
 interface HeaderProps {
   onOpenPlanMyDay?: () => void;
@@ -79,6 +80,9 @@ export function Header({ onOpenPlanMyDay }: HeaderProps) {
           </button>
         )}
 
+        {/* Notification Center */}
+        {isAuthenticated && <NotificationCenter />}
+
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
@@ -90,7 +94,7 @@ export function Header({ onOpenPlanMyDay }: HeaderProps) {
 
         {/* User Initials Avatar */}
         <div className="w-7 h-7 rounded-full bg-secondary text-foreground font-semibold text-xs flex items-center justify-center border border-border">
-          {profile.full_name.charAt(0)}
+          {(profile.full_name || 'Owner').charAt(0).toUpperCase()}
         </div>
       </div>
     </header>

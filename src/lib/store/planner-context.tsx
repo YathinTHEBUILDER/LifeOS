@@ -117,13 +117,13 @@ const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
 const LOCAL_STORAGE_PREFIX = 'life_os_planner_';
 
 const DEFAULT_PROFILE: UserProfile = {
-  id: 'user-default-1',
-  email: 'user@example.com',
-  full_name: 'Alex Johnson',
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
+  id: 'owner-default',
+  email: '',
+  full_name: 'Owner',
+  timezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
   work_start_time: '09:00',
   work_end_time: '18:00',
-  daily_intention: 'Focus on shipping InvoiceFlow MVP and completing the database assignment.',
+  daily_intention: '',
   notifications_enabled: false,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -347,100 +347,9 @@ export function PlannerProvider({ children }: { children: React.ReactNode }) {
   };
 
   const initSeedData = () => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const today = new Date();
-
-    const seedProjects: Project[] = [
-      {
-        id: 'proj-1',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'College',
-        description: 'Semester coursework & assignments',
-        color: '#3B82F6',
-        icon: 'GraduationCap',
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'proj-2',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'InvoiceFlow',
-        description: 'Next.js Invoicing SaaS product build',
-        color: '#6366F1',
-        icon: 'Layers',
-        status: 'active',
-        deadline: format(addDays(today, 14), 'yyyy-MM-dd'),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const seedTasks: Task[] = [
-      {
-        id: 'task-1',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-1',
-        title: 'Review Lecture Notes',
-        priority: 'high',
-        status: 'todo',
-        due_date: todayStr,
-        estimated_duration: 45,
-        actual_duration: 0,
-        recurrence_rule: 'weekdays',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'task-2',
-        user_id: DEFAULT_PROFILE.id,
-        project_id: 'proj-2',
-        title: 'Implement Stripe Checkout webhook',
-        priority: 'urgent',
-        status: 'todo',
-        due_date: todayStr,
-        estimated_duration: 60,
-        actual_duration: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const seedHabits: Habit[] = [
-      {
-        id: 'habit-1',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'Morning Hydration',
-        frequency: 'daily',
-        target_days: 7,
-        color: '#3B82F6',
-        icon: 'GlassWater',
-        is_active: true,
-        reminder_time: '08:30',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'habit-2',
-        user_id: DEFAULT_PROFILE.id,
-        name: 'Daily Coding Session',
-        frequency: 'weekdays',
-        target_days: 5,
-        color: '#10B981',
-        icon: 'Code',
-        is_active: true,
-        reminder_time: '10:00',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    setProjects(seedProjects);
-    setTasks(seedTasks);
-    setHabits(seedHabits);
-    saveToLocal('projects', seedProjects);
-    saveToLocal('tasks', seedTasks);
-    saveToLocal('habits', seedHabits);
+    setProjects([]);
+    setTasks([]);
+    setHabits([]);
   };
 
   useEffect(() => {

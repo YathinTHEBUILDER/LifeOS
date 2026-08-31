@@ -2,9 +2,9 @@
 
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
-import { Download, Upload, LogOut, LogIn, Bell, BellOff } from 'lucide-react';
+import { Download, Upload, LogOut, LogIn, User, Clock, ShieldCheck, Database } from 'lucide-react';
 import { usePlanner } from '@/lib/store/planner-context';
-import { requestNotificationPermission, getNotificationPermission } from '@/lib/notifications';
+import { NotificationSettings } from './notification-settings';
 import { toast } from 'sonner';
 
 export function SettingsView() {
@@ -19,26 +19,37 @@ export function SettingsView() {
     projects,
     habits,
     notes,
+    focusSessions,
+    dailyReviews,
     importData,
   } = usePlanner();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [name, setName] = useState(profile.full_name);
+  const [name, setName] = useState(profile.full_name || 'Owner');
   const [workStart, setWorkStart] = useState(profile.work_start_time || '09:00');
   const [workEnd, setWorkEnd] = useState(profile.work_end_time || '18:00');
-  const [timezone, setTimezone] = useState(profile.timezone || 'UTC');
-  const [notifPermission, setNotifPermission] = useState<string>(getNotificationPermission());
+  const [timezone, setTimezone] = useState(
+    profile.timezone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC')
+  );
 
   const handleExportData = () => {
     const data = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      owner: {
+        name,
+        email: profile.email,
+        timezone,
+      },
       profile,
       tasks,
       events,
       projects,
       habits,
       notes,
-      exportedAt: new Date().toISOString(),
+      focusSessions,
+      dailyReviews,
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -48,7 +59,7 @@ export function SettingsView() {
     a.download = `lifeos-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Backup exported');
+    toast.success('Personal data backup exported');
   };
 
   const handleImportClick = () => {
@@ -65,31 +76,17 @@ export function SettingsView() {
         const json = JSON.parse(event.target?.result as string);
         const success = importData(json);
         if (success) {
-          toast.success('Backup successfully restored!');
+          toast.success('Backup successfully restored');
+        } else {
+          toast.error('Failed to import backup file.');
         }
       } catch (err) {
-        console.error('Failed to parse JSON:', err);
+        console.error('Failed to parse backup JSON:', err);
         toast.error('Invalid JSON backup file.');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
-  };
-
-  const handleToggleNotifications = async () => {
-    if (notifPermission === 'granted') {
-      updateProfile({ notifications_enabled: !profile.notifications_enabled });
-      toast.success(profile.notifications_enabled ? 'Notifications disabled' : 'Notifications enabled');
-    } else {
-      const granted = await requestNotificationPermission();
-      setNotifPermission(getNotificationPermission());
-      if (granted) {
-        updateProfile({ notifications_enabled: true });
-        toast.success('Notification permission granted!');
-      } else {
-        toast.error('Notification permission denied or blocked by browser.');
-      }
-    }
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -100,7 +97,7 @@ export function SettingsView() {
       work_start_time: workStart,
       work_end_time: workEnd,
     });
-    toast.success('Preferences updated');
+    toast.success('Personal preferences saved');
   };
 
   const handleSignOut = async () => {
@@ -121,14 +118,15 @@ export function SettingsView() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Preferences and data storage</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Personal preferences, schedule, and device notifications</p>
       </div>
 
-      {/* Account & Schedule (iOS Grouped Style) */}
+      {/* Profile & Schedule Form */}
       <form onSubmit={handleSaveProfile} className="space-y-6">
+        {/* Personal Profile */}
         <div className="space-y-1">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
-            General
+            Personal Profile
           </span>
           <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
             <div className="p-3.5 flex items-center justify-between gap-4">
@@ -137,6 +135,7 @@ export function SettingsView() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="Owner"
                 className="text-xs text-right bg-transparent border-0 focus:outline-hidden text-foreground placeholder:text-muted-foreground font-medium"
               />
             </div>
@@ -153,13 +152,14 @@ export function SettingsView() {
           </div>
         </div>
 
+        {/* Working Hours */}
         <div className="space-y-1">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
-            Working Hours
+            Working Schedule
           </span>
           <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
             <div className="p-3.5 flex items-center justify-between gap-4">
-              <span className="text-xs font-normal text-foreground">Start Time</span>
+              <span className="text-xs font-normal text-foreground">Day Starts</span>
               <input
                 type="time"
                 value={workStart}
@@ -169,7 +169,7 @@ export function SettingsView() {
             </div>
 
             <div className="p-3.5 flex items-center justify-between gap-4">
-              <span className="text-xs font-normal text-foreground">End Time</span>
+              <span className="text-xs font-normal text-foreground">Day Ends</span>
               <input
                 type="time"
                 value={workEnd}
@@ -183,7 +183,7 @@ export function SettingsView() {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs"
+            className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 tactile-btn shadow-xs cursor-pointer"
           >
             Save Changes
           </button>
@@ -191,59 +191,24 @@ export function SettingsView() {
       </form>
 
       {/* Notifications Section */}
+      <NotificationSettings />
+
+      {/* Storage, Sync & Backup */}
       <div className="space-y-1">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
-          Notifications & Alerts
+          Data & Account
         </span>
-        <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
-          <div className="p-3.5 flex items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-medium text-foreground block">Event & Habit Reminders</span>
-              <span className="text-[11px] text-muted-foreground">
-                Receive browser alerts 5 minutes before scheduled time blocks and habit reminders.
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleToggleNotifications}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium tactile-btn transition-colors shrink-0 ${
-                profile.notifications_enabled && notifPermission === 'granted'
-                  ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'
-                  : 'bg-secondary text-foreground hover:bg-secondary/80 border border-border'
-              }`}
-            >
-              {profile.notifications_enabled && notifPermission === 'granted' ? (
-                <>
-                  <Bell className="w-3.5 h-3.5" />
-                  <span>Enabled</span>
-                </>
-              ) : (
-                <>
-                  <BellOff className="w-3.5 h-3.5" />
-                  <span>{notifPermission === 'denied' ? 'Blocked' : 'Enable'}</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Sync & Backup Status */}
-      <div className="space-y-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pl-1">
-          Storage & Sync
-        </span>
-        <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden">
+        <div className="rounded-xl bg-card border border-border/80 divide-y divide-border/60 overflow-hidden shadow-xs">
+          {/* Account Row */}
           <div className="p-3.5 flex items-center justify-between gap-4">
             <div>
               <span className="text-xs font-medium text-foreground block">Account & Sync</span>
               <span className="text-[11px] text-muted-foreground">
                 {isAuthenticated
-                  ? `Signed in as ${profile.email || profile.full_name}`
+                  ? `Signed in as ${profile.email || name}`
                   : isSupabaseConnected
-                  ? 'Cloud connected · Sign in to synchronize'
-                  : 'Running offline with local storage'}
+                  ? 'Cloud connected · Sign in to sync across devices'
+                  : 'Running locally'}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -262,7 +227,7 @@ export function SettingsView() {
               {isAuthenticated ? (
                 <button
                   onClick={handleSignOut}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-secondary transition-colors"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-secondary transition-colors"
                   title="Sign Out"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -270,7 +235,7 @@ export function SettingsView() {
               ) : isSupabaseConnected ? (
                 <Link
                   href="/auth/login"
-                  className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+                  className="flex items-center gap-1 text-xs text-primary font-medium hover:underline px-2 py-1 rounded-md bg-primary/10"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Sign In</span>
@@ -279,30 +244,31 @@ export function SettingsView() {
             </div>
           </div>
 
+          {/* Backup & Export Row */}
           <div className="p-3.5 flex items-center justify-between gap-4">
             <div>
-              <span className="text-xs font-medium text-foreground block">Data Backup</span>
+              <span className="text-xs font-medium text-foreground block">Personal Data Backup</span>
               <span className="text-[11px] text-muted-foreground">
-                Export or import a JSON snapshot of your planner.
+                Export or restore a complete snapshot of your schedule, tasks, habits, and notes.
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleImportClick}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 tactile-btn"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 tactile-btn cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>Import</span>
+                <span>Restore</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleExportData}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 tactile-btn"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 tactile-btn cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export</span>
+                <span>Export JSON</span>
               </button>
             </div>
           </div>

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Compass, KeyRound, Mail, Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Compass, Mail, Lock, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
@@ -19,7 +19,7 @@ export default function LoginPage() {
 
     const supabase = createClient();
     if (!supabase) {
-      toast.info('Supabase keys not yet configured. Continuing in local-first mode.');
+      toast.info('Continuing in offline personal mode.');
       router.push('/');
       return;
     }
@@ -33,7 +33,7 @@ export default function LoginPage() {
       toast.error(error.message);
       setLoading(false);
     } else {
-      toast.success('Signed in successfully!');
+      toast.success('Welcome back.');
       router.push('/');
       router.refresh();
     }
@@ -47,8 +47,8 @@ export default function LoginPage() {
           <div className="w-12 h-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center mx-auto shadow-lg shadow-primary/20">
             <Compass className="w-6 h-6" />
           </div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Welcome back to LifeOS</h1>
-          <p className="text-xs text-muted-foreground">Sign in to sync your schedule, tasks, and habits</p>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">LifeOS</h1>
+          <p className="text-xs text-muted-foreground">Sign in to access your personal schedule and tasks</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
@@ -58,7 +58,7 @@ export default function LoginPage() {
               <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
               <input
                 type="email"
-                placeholder="alex@example.com"
+                placeholder="your.email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -85,7 +85,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-xs"
+            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
           >
             {loading ? 'Authenticating...' : 'Sign In'}
             <ArrowRight className="w-3.5 h-3.5" />
@@ -93,9 +93,9 @@ export default function LoginPage() {
         </form>
 
         <div className="pt-2 text-center text-xs text-muted-foreground">
-          Don't have an account?{' '}
+          First time setup?{' '}
           <Link href="/auth/signup" className="font-semibold text-primary hover:underline">
-            Sign up
+            Create owner account
           </Link>
         </div>
       </div>

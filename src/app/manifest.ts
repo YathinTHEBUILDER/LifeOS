@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'LifeOS Personal Planner',
     short_name: 'LifeOS',
-    description: 'Personal productivity operating system: schedule, tasks, habits, time-blocking and focus.',
+    description: 'Private personal schedule, tasks, habits, and time system.',
     start_url: '/',
     display: 'standalone',
     background_color: '#090d16',

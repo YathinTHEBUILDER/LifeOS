@@ -53,8 +53,14 @@ export function ProjectManager() {
       </div>
 
       {/* Projects Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-        {projects.map((project) => {
+      {projects.length === 0 ? (
+        <div className="py-16 text-center rounded-2xl bg-card border border-border/60 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">No projects yet</p>
+          <p className="text-muted-foreground text-[11px]">Group your tasks and goals into focus areas.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {projects.map((project) => {
           const projectTasks = tasks.filter((t) => t.project_id === project.id);
           const completedCount = projectTasks.filter((t) => t.status === 'completed').length;
           const progress = projectTasks.length > 0 ? Math.round((completedCount / projectTasks.length) * 100) : 0;
@@ -113,7 +119,8 @@ export function ProjectManager() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* New Project Dialog */}
       {isCreateOpen && (

@@ -20,7 +20,7 @@ export default function SignUpPage() {
 
     const supabase = createClient();
     if (!supabase) {
-      toast.info('Supabase keys not yet configured. Continuing in local-first mode.');
+      toast.info('Continuing in offline personal mode.');
       router.push('/');
       return;
     }
@@ -39,7 +39,7 @@ export default function SignUpPage() {
       toast.error(error.message);
       setLoading(false);
     } else {
-      toast.success('Account created! Please check your email or proceed.');
+      toast.success('Owner account created successfully!');
       router.push('/');
     }
   };
@@ -52,18 +52,18 @@ export default function SignUpPage() {
           <div className="w-12 h-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center mx-auto shadow-lg shadow-primary/20">
             <Compass className="w-6 h-6" />
           </div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Create your LifeOS account</h1>
-          <p className="text-xs text-muted-foreground">Start your personal productivity operating system</p>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Setup Owner Account</h1>
+          <p className="text-xs text-muted-foreground">Create your private LifeOS owner credentials</p>
         </div>
 
         <form onSubmit={handleSignUp} className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Full Name</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Your Name</label>
             <div className="relative">
               <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
               <input
                 type="text"
-                placeholder="Alex Johnson"
+                placeholder="Owner Name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
@@ -78,7 +78,7 @@ export default function SignUpPage() {
               <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
               <input
                 type="email"
-                placeholder="alex@example.com"
+                placeholder="your.email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -106,9 +106,9 @@ export default function SignUpPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-xs"
+            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
           >
-            {loading ? 'Creating account...' : 'Create Account'}
+            {loading ? 'Creating...' : 'Complete Setup'}
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>

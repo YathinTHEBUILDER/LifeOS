@@ -4,8 +4,8 @@ import { PlannerProvider } from '@/lib/store/planner-context';
 import { AppShell } from '@/components/layout/app-shell';
 
 export const metadata: Metadata = {
-  title: 'LifeOS — Personal Planner & Time Operating System',
-  description: 'A calm, fast, unified personal productivity system with tasks, time blocking, habits, calendar, and focus mode.',
+  title: 'LifeOS — Personal Schedule & Daily System',
+  description: 'Private personal schedule, tasks, habits, and time system.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,

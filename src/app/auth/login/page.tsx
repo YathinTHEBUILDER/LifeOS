@@ -12,7 +12,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTarget = searchParams?.get('redirect') || '/';
 
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -35,38 +35,18 @@ function LoginForm() {
       return;
     }
 
-    const trimmedUser = username.trim().toLowerCase();
-
-    // Map username to owner accounts
-    const primaryEmail = trimmedUser === 'yathin' ? 'yathin@lifeos.app' : `${trimmedUser}@lifeos.app`;
-    const fallbackEmail = 'yathing52@gmail.com';
-
-    // 1. Try primary owner account
-    const { data: primaryData, error: primaryError } = await supabase.auth.signInWithPassword({
-      email: primaryEmail,
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
       password,
     });
 
-    if (!primaryError && primaryData.user) {
-      toast.success('Welcome back, Yathin.');
+    if (error) {
+      toast.error(error.message);
+      setLoading(false);
+    } else {
+      toast.success('Welcome back.');
       window.location.href = redirectTarget;
-      return;
     }
-
-    // 2. Try fallback owner account
-    const { data: fallbackData, error: fallbackError } = await supabase.auth.signInWithPassword({
-      email: fallbackEmail,
-      password,
-    });
-
-    if (!fallbackError && fallbackData.user) {
-      toast.success('Welcome back, Yathin.');
-      window.location.href = redirectTarget;
-      return;
-    }
-
-    toast.error(fallbackError?.message || primaryError?.message || 'Invalid username or password.');
-    setLoading(false);
   };
 
   return (
@@ -82,14 +62,14 @@ function LoginForm() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Username</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Email</label>
           <div className="relative">
             <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
             <input
-              type="text"
-              placeholder="Yathin"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               autoCapitalize="none"
               autoCorrect="off"
